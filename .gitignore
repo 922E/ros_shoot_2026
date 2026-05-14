@@ -1,0 +1,42 @@
+# catkin / ROS build outputs
+build/
+devel/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# ROS bags / logs / temp
+*.bag
+*.log
+*.tmp
+
+# Large model weights
+src/robot_slam/scripts/paraformer-zh/*.pt
+
+# secrets
+.env
+*.key
+*.pem
+**/*secret*
+**/*token*
+**/api_key*
+CLAUDE.local.md
+.claude/settings.local.json

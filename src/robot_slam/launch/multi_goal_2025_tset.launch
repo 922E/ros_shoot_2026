@@ -1,0 +1,13 @@
+<launch>
+  <!-- 通过 arg 标签定义一个名为 params_file 的参数，默认值为指定的 YAML 文件路径 -->
+  <arg name="params_file" default="$(find robot_slam)/config/multi_goal_params.yaml"/>
+  
+  <!-- 加载多目标点的参数 -->
+  <rosparam file="$(arg params_file)" command="load"/>
+  
+  <!-- 启动 multi_goal 节点 -->
+  <node name="multi_goal" pkg="robot_slam" type="navigation_multi_goals_2025.py" output="screen">
+    <!-- 不需要在这里显式设置参数，因为已经通过 rosparam 加载 -->
+  </node>
+</launch>
+
