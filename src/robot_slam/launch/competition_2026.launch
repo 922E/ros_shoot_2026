@@ -1,0 +1,26 @@
+<launch>
+  <!--
+  2026 射击挑战赛 - 比赛主控启动
+  使用方式:
+    roslaunch robot_slam competition_2026.launch
+  前提: 底盘、导航、摄像头、AR标签检测、模板匹配已启动
+  -->
+
+  <arg name="route_config" default="$(find robot_slam)/config/competition_2026_route.yaml"/>
+
+  <!-- 比赛主控 -->
+  <node name="competition_control" pkg="robot_slam" type="competition_control.py"
+        output="screen" required="true">
+    <param name="route_config" value="$(arg route_config)"/>
+  </node>
+
+  <!-- 比赛监控 -->
+  <node name="competition_monitor" pkg="robot_slam" type="competition_monitor.py"
+        output="screen">
+    <param name="total_time" value="120.0"/>
+    <param name="start_motion_timeout" value="30.0"/>
+    <param name="stuck_timeout" value="20.0"/>
+    <param name="field_half_size" value="1.8"/>
+  </node>
+
+</launch>
