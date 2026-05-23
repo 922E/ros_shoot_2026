@@ -1,3 +1,0 @@
-<launch>
-  <include file="$(find abot_slam)/launch/include/move_base.launch.xml" />  
-</launch>

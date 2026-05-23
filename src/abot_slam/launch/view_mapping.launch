@@ -1,4 +1,0 @@
-
-<launch>
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find abot_slam)/rviz/view_gmapping.rviz" />
-</launch>
