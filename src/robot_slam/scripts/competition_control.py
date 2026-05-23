@@ -10,15 +10,28 @@ import rospy
 import yaml
 import math
 import os
-import rospkg
 import tf
 from actionlib_msgs.msg import GoalStatus
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Point
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_msgs.msg import String, Int32
-from tf_conversions import transformations
 import actionlib
+
+
+def quaternion_from_euler(roll, pitch, yaw):
+    """替换 tf_conversions.transformations，避免 Py3 兼容问题"""
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    return (qx, qy, qz, qw)
 
 
 class CompetitionControl:
@@ -75,9 +88,8 @@ class CompetitionControl:
     # ===================== 配置加载 =====================
 
     def _default_route_path(self):
-        rp = rospkg.RosPack()
-        return os.path.join(rp.get_path('robot_slam'),
-                            'config', 'competition_2026_route.yaml')
+        pkg_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(pkg_path, 'config', 'competition_2026_route.yaml')
 
     def _load_route(self, path):
         with open(path, 'r') as f:
@@ -109,7 +121,7 @@ class CompetitionControl:
         goal.target_pose.header.stamp = rospy.Time.now()
         goal.target_pose.pose.position.x = x
         goal.target_pose.pose.position.y = y
-        q = transformations.quaternion_from_euler(0.0, 0.0, yaw)
+        q = quaternion_from_euler(0.0, 0.0, yaw)
         goal.target_pose.pose.orientation.x = q[0]
         goal.target_pose.pose.orientation.y = q[1]
         goal.target_pose.pose.orientation.z = q[2]
@@ -303,6 +315,8 @@ class CompetitionControl:
             self.robot_y = trans[1]
         except (tf.Exception, tf.LookupException, tf.ConnectivityException):
             pass  # tf 不可用时保持上次值
+        except Exception:
+            pass  # 兼容 Py3 下 tf 异常类型差异
 
     def _handle_wait_start(self):
         rospy.loginfo_throttle(5, "等待启动... (输入 1 开始比赛)")
