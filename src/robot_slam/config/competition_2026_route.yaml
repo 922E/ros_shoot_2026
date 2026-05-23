@@ -1,0 +1,110 @@
+# competition_2026_route.yaml — 2026 赛季射击挑战赛导航路线配置
+# 状态机按 route_points 列表顺序依次遍历
+# 修改此文件即可调整路线，无需改动代码
+
+route_points:
+  # ── 起点 ──
+  - id: 0
+    name: "起点"
+    type: "relay"
+    x: 0.0
+    y: 0.0
+    yaw: 0.0              # 弧度
+
+  # ── 中继点 A ──
+  - id: 1
+    name: "中继点A"
+    type: "relay"
+    x: 0.5
+    y: 0.3
+    yaw: 0.0
+
+  # ── 任务点 1: 环形计分靶 (20分) ──
+  - id: 2
+    name: "任务点1-环形靶"
+    type: "task"
+    target_type: "circular"
+    x: 0.8
+    y: 0.8
+    yaw: 0.0
+    task_zone:            # 38cm × 32cm 区域边界 (map 坐标系)
+      x_min: 0.61
+      x_max: 0.99
+      y_min: 0.64
+      y_max: 0.96
+
+  # ── 中继点 B ──
+  - id: 3
+    name: "中继点B"
+    type: "relay"
+    x: 1.3
+    y: 0.3
+    yaw: 1.57
+
+  # ── 任务点 2: 旋转靶 (15分) ──
+  - id: 4
+    name: "任务点2-旋转靶"
+    type: "task"
+    target_type: "rotating"
+    x: 1.5
+    y: -0.8
+    yaw: 3.14
+    task_zone:
+      x_min: 1.31
+      x_max: 1.69
+      y_min: -0.96
+      y_max: -0.64
+
+  # ── 中继点 C ──
+  - id: 5
+    name: "中继点C"
+    type: "relay"
+    x: 0.8
+    y: -1.2
+    yaw: -1.57
+
+  # ── 任务点 3: 移动靶 (15分) ──
+  - id: 6
+    name: "任务点3-移动靶"
+    type: "task"
+    target_type: "moving"
+    x: -0.6
+    y: -0.8
+    yaw: 3.14
+    task_zone:
+      x_min: -0.79
+      x_max: -0.41
+      y_min: -0.96
+      y_max: -0.64
+
+  # ── 中继点 D ──
+  - id: 7
+    name: "中继点D"
+    type: "relay"
+    x: -0.3
+    y: 0.0
+    yaw: 1.57
+
+  # ── 终点区域 (10分) ──
+  - id: 8
+    name: "终点"
+    type: "end"
+    x: 0.0
+    y: 1.5
+    yaw: 0.0
+
+# 全局参数
+global:
+  relay_close_threshold: 0.10    # 中继点判近距离 (米)
+  end_close_threshold: 0.15      # 终点判近距离 (米)
+  task_timeout: 60.0             # 单个任务点超时 (秒)
+  shoot_timeout: 15.0            # 射击超时 (秒)
+  shoot_cooldown: 2.0            # 射击后冷却 (秒)
+  stuck_timeout: 20.0            # 状态卡死超时 (秒)
+  competition_total_time: 120.0  # 比赛总限时 (秒)
+  start_motion_timeout: 30.0     # 启动运动超时 (秒)
+
+# 场地参数
+field:
+  size: 3.6                      # 场地边长 (米)
+  half_size: 1.8                 # 半边长 (用于围挡检测)

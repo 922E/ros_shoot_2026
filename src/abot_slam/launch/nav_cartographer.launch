@@ -1,0 +1,7 @@
+<launch>
+  <param name="use_sim_time" value="false" />
+
+  <include file="$(find abot_bringup)/launch/robot_with_imu.launch"/>
+  <include file="$(find AR_SIM)/launch/5x5/turtlebot_2Dlidar_localication.launch"/>  
+  <include file="$(find AR_SIM)/launch/5x5/move_base_5x5.launch"/>
+</launch>
