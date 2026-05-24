@@ -1,260 +1,300 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-"""
-2026 Shooting Competition - Main Control Node
-State: WAIT_START -> VOICE_RECV -> NAV_LOOP -> FINISH
-Loads route config from competition_2026_route.yaml
-"""
 
 import rospy
-import yaml
 import math
+import actionlib
+import serial
+import yaml
 import os
-import tf
 from actionlib_msgs.msg import GoalStatus
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Twist, Point
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Point
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_msgs.msg import String, Int32
-import actionlib
+from math import pi
+import tf
 
+# Shoot serial port (same as shoot_2025.py)
+serialPort = "/dev/shoot"
+baudRate = 9600
+ser = serial.Serial(port=serialPort, baudrate=baudRate, parity="N",
+                    bytesize=8, stopbits=1)
 
-def _safe(s):
-    """Encode unicode to utf-8 bytes for Python 2 logging safety"""
-    if isinstance(s, unicode):
-        return s.encode('utf-8')
-    return str(s)
+# Target thresholds (same as shoot_2025.py)
+Yaw_th = 0.1
+Yaw_th1 = 0.1
+Min_y = -0.1
+Max_y = 0.1
 
-
-def quaternion_from_euler(roll, pitch, yaw):
-    cy = math.cos(yaw * 0.5)
-    sy = math.sin(yaw * 0.5)
-    cp = math.cos(pitch * 0.5)
-    sp = math.sin(pitch * 0.5)
-    cr = math.cos(roll * 0.5)
-    sr = math.sin(roll * 0.5)
-    qw = cr * cp * cy + sr * sp * sy
-    qx = sr * cp * cy - cr * sp * sy
-    qy = cr * sp * cy + sr * cp * sy
-    qz = cr * cp * sy - sr * sp * cy
-    return (qx, qy, qz, qw)
+# Global state flags (same as shoot_2025.py)
+point_msg = None
+target_id_rotating = None
+target_id_moving = None
+should_attack_circular = False
+should_attack_rotating = False
+should_attack_moving = False
 
 
 class CompetitionControl:
     def __init__(self):
         rospy.init_node('competition_control')
 
+        # Load route config
         route_path = rospy.get_param('~route_config',
                                      self._default_route_path())
-        self.route_points, self.global_params, self.target_ids = self._load_route(route_path)
+        self.route_points, self.global_params, self.target_ids = \
+            self._load_route(route_path)
         rospy.loginfo("Loaded route: %d points", len(self.route_points))
 
         self.state = 'WAIT_START'
         self.current_point_index = 0
-        self.state_change_time = rospy.Time.now()
 
-        # 先用默认值，语音模块会覆盖
-        self.target_id_rotating = None
-        self.target_id_moving = None
-        self.latest_ar_markers = None
-        self.latest_object_point = None
-        self.shoot_done = False
+        # Publishers (match shoot_2025.py)
+        self.set_pose_pub = rospy.Publisher('/initialpose',
+                                            PoseWithCovarianceStamped,
+                                            queue_size=5)
+        self.arrive_pub = rospy.Publisher('/voiceWords', String, queue_size=10)
+        self.audio_pub = rospy.Publisher('audio_topic', String, queue_size=10)
+        self.pub = rospy.Publisher("/cmd_vel", Twist, queue_size=1000)
+        self.state_pub = rospy.Publisher('/competition_state', String,
+                                         queue_size=10)
 
+        # Subscribers (match shoot_2025.py callback-driven pattern)
+        self.find_sub = rospy.Subscriber('/object_position', Point,
+                                         self.circular_target)
+        self.ar_sub1 = rospy.Subscriber('/ar_pose_marker', AlvarMarkers,
+                                         self.rotating_target)
+        self.ar_sub2 = rospy.Subscriber('/ar_pose_marker', AlvarMarkers,
+                                         self.moving_target)
+        self.target_id_rotating_sub = rospy.Subscriber('target_id_rotating',
+                                                       Int32,
+                                                       self._rotating_id_cb)
+        self.target_id_moving_sub = rospy.Subscriber('target_id_moving',
+                                                     Int32,
+                                                     self._moving_id_cb)
+
+        # move_base client (match shoot_2025.py)
+        self.move_base = actionlib.SimpleActionClient("move_base",
+                                                       MoveBaseAction)
+        self.move_base.wait_for_server(rospy.Duration(60))
+
+        # TF listener
+        self.tf_listener = tf.TransformListener()
         self.robot_x = 0.0
         self.robot_y = 0.0
-        self.tf_listener = tf.TransformListener()
-
-        # Publishers
-        self.cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-        self.shoot_pub = rospy.Publisher('/shoot', String, queue_size=10)
-        self.audio_pub = rospy.Publisher('audio_topic', String, queue_size=10)
-        self.state_pub = rospy.Publisher('/competition_state', String, queue_size=10)
-        self.init_pose_pub = rospy.Publisher('/initialpose',
-                                             PoseWithCovarianceStamped, queue_size=5)
-
-        # Subscribers
-        rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self._ar_callback)
-        rospy.Subscriber('/object_position', Point, self._object_callback)
-        rospy.Subscriber('target_id_rotating', Int32, self._rotating_id_cb)
-        rospy.Subscriber('target_id_moving', Int32, self._moving_id_cb)
-
-        # move_base client
-        self.move_base = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        rospy.loginfo("Waiting for move_base...")
-        if not self.move_base.wait_for_server(rospy.Duration(30)):
-            rospy.logwarn("move_base connection timeout")
 
         rospy.loginfo("competition_control init OK, state: %s", self.state)
 
     # ===================== Config =====================
 
     def _default_route_path(self):
-        pkg_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(pkg_path, 'config', 'competition_2026_route.yaml')
+        pkg_path = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(pkg_path, 'config',
+                            'competition_2026_route.yaml')
 
     def _load_route(self, path):
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
-        return data['route_points'], data.get('global', {}), data.get('target_ids', {})
+        return data['route_points'], data.get('global', {}), \
+            data.get('target_ids', {})
 
-    # ===================== Callbacks =====================
-
-    def _ar_callback(self, msg):
-        self.latest_ar_markers = msg.markers
-
-    def _object_callback(self, msg):
-        self.latest_object_point = msg
+    # ===================== Callbacks (match shoot_2025.py) =====================
 
     def _rotating_id_cb(self, msg):
-        self.target_id_rotating = msg.data
-        rospy.loginfo("Rotating target ID: %d", msg.data)
+        global target_id_rotating
+        target_id_rotating = msg.data
 
     def _moving_id_cb(self, msg):
-        self.target_id_moving = msg.data
-        rospy.loginfo("Moving target ID: %d", msg.data)
+        global target_id_moving
+        target_id_moving = msg.data
+
+    def circular_target(self, data):
+        """环形靶瞄准回调 (same as shoot_2025.py)"""
+        global point_msg, should_attack_circular
+        if not should_attack_circular:
+            return
+        point_msg = data
+        offset_x = data.x - 320
+        if abs(offset_x) > 10 and data.z == 34:
+            msg = Twist()
+            msg.angular.z = -0.02 * offset_x
+            self.pub.publish(msg)
+        elif abs(offset_x) <= 10 and data.z == 34:
+            self._fire()
+            rospy.loginfo("Circular target hit!")
+            should_attack_circular = False
+
+    def rotating_target(self, data):
+        """旋转靶瞄准回调 (same as shoot_2025.py)"""
+        global target_id_rotating, should_attack_rotating
+        global Yaw_th, Min_y, Max_y
+        if not should_attack_rotating:
+            return
+        for marker in data.markers:
+            if marker.id == target_id_rotating:
+                ax = marker.pose.pose.position.x
+                ay = marker.pose.pose.position.y
+                if abs(ax) >= Yaw_th:
+                    msg = Twist()
+                    msg.angular.z = -1.0 * ax
+                    self.pub.publish(msg)
+                elif Min_y <= ay <= Max_y:
+                    self._fire()
+                    rospy.sleep(2)
+                    rospy.loginfo("Rotating target hit!")
+                    should_attack_rotating = False
+
+    def moving_target(self, data):
+        """移动靶瞄准回调 (same as shoot_2025.py)"""
+        global target_id_moving, should_attack_moving, Yaw_th1
+        if not should_attack_moving:
+            return
+        for marker in data.markers:
+            if marker.id == target_id_moving:
+                ax = marker.pose.pose.position.x
+                if abs(ax) >= Yaw_th1:
+                    msg = Twist()
+                    msg.angular.z = -0.95 * ax
+                    self.pub.publish(msg)
+                else:
+                    self._fire()
+                    rospy.sleep(0.1)
+                    rospy.loginfo("Moving target hit!")
+                    should_attack_moving = False
 
     # ===================== Navigation =====================
 
-    def _navigate_to(self, x, y, yaw, timeout=60.0):
+    def set_pose(self, x, y, yaw_deg):
+        """Set AMCL initial pose (same as shoot_2025.py)"""
+        pose = PoseWithCovarianceStamped()
+        pose.header.stamp = rospy.Time.now()
+        pose.header.frame_id = 'map'
+        pose.pose.pose.position.x = x
+        pose.pose.pose.position.y = y
+        q = self._quat_from_euler(0.0, 0.0, yaw_deg / 180.0 * pi)
+        pose.pose.pose.orientation.x = q[0]
+        pose.pose.pose.orientation.y = q[1]
+        pose.pose.pose.orientation.z = q[2]
+        pose.pose.pose.orientation.w = q[3]
+        self.set_pose_pub.publish(pose)
+
+    def goto(self, x, y, yaw_deg, timeout=60.0):
+        """Navigate using actionlib (same as shoot_2025.py)"""
         goal = MoveBaseGoal()
         goal.target_pose.header.frame_id = 'map'
         goal.target_pose.header.stamp = rospy.Time.now()
         goal.target_pose.pose.position.x = x
         goal.target_pose.pose.position.y = y
-        q = quaternion_from_euler(0.0, 0.0, yaw)
+        q = self._quat_from_euler(0.0, 0.0, yaw_deg / 180.0 * pi)
         goal.target_pose.pose.orientation.x = q[0]
         goal.target_pose.pose.orientation.y = q[1]
         goal.target_pose.pose.orientation.z = q[2]
         goal.target_pose.pose.orientation.w = q[3]
 
-        rospy.loginfo("Nav to: (%.3f, %.3f, yaw=%.2f)", x, y, yaw)
-        self.move_base.send_goal(goal)
-        finished = self.move_base.wait_for_result(rospy.Duration(timeout))
-        if not finished:
+        rospy.loginfo("Nav to: (%.3f, %.3f)", x, y)
+        self.move_base.send_goal(goal, self._done_cb, self._active_cb,
+                                 self._feedback_cb)
+        result = self.move_base.wait_for_result(rospy.Duration(timeout))
+        if not result:
             self.move_base.cancel_goal()
             rospy.logwarn("Nav timeout")
             return False
         state = self.move_base.get_state()
-        if state != GoalStatus.SUCCEEDED:
-            rospy.logwarn("Nav failed, status=%d", state)
-            return False
-        return True
+        if state == GoalStatus.SUCCEEDED:
+            rospy.loginfo("Nav succeeded")
+            return True
+        rospy.logwarn("Nav failed, status=%d", state)
+        return False
 
-    def _cancel_nav(self):
+    def _done_cb(self, status, result):
+        pass
+
+    def _active_cb(self):
+        pass
+
+    def _feedback_cb(self, feedback):
+        pass
+
+    def cancel(self):
         self.move_base.cancel_all_goals()
+
+    def _quat_from_euler(self, roll, pitch, yaw):
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+        return (sr * cp * cy - cr * sp * sy,
+                cr * sp * cy + sr * cp * sy,
+                cr * cp * sy - sr * sp * cy,
+                cr * cp * cy + sr * sp * sy)
 
     # ===================== Position =====================
 
-    def _distance_to(self, x, y):
-        return math.hypot(self.robot_x - x, self.robot_y - y)
+    def _update_robot_pose(self):
+        try:
+            self.tf_listener.waitForTransform('map', 'base_link',
+                                              rospy.Time(0),
+                                              rospy.Duration(0.5))
+            trans, _ = self.tf_listener.lookupTransform(
+                'map', 'base_link', rospy.Time(0))
+            self.robot_x = trans[0]
+            self.robot_y = trans[1]
+        except Exception:
+            pass
 
-    def _is_in_task_zone(self, zone):
+    def _close_enough(self, x, y, threshold):
+        return math.hypot(self.robot_x - x, self.robot_y - y) < threshold
+
+    def _in_task_zone(self, zone):
         if zone is None:
-            return self._distance_to(self.route_points[self.current_point_index]['x'],
-                                     self.route_points[self.current_point_index]['y']) < 0.05
+            return False
         return (zone['x_min'] <= self.robot_x <= zone['x_max'] and
                 zone['y_min'] <= self.robot_y <= zone['y_max'])
 
     # ===================== Shooting =====================
 
     def _fire(self):
-        self.shoot_pub.publish(String("shoot"))
-        rospy.sleep(0.1)
-        self.shoot_pub.publish(String("stopshoot"))
-        rospy.loginfo("FIRED!")
+        """Fire using serial (same as shoot_2025.py)"""
+        ser.write(b'\x55\x01\x12\x00\x00\x00\x01\x69')
+        rospy.sleep(0.09)
+        ser.write(b'\x55\x01\x11\x00\x00\x00\x01\x68')
 
-    def _shoot_sequence(self, target_type, point):
-        timeout = rospy.Time.now() + rospy.Duration(
-            self.global_params.get('shoot_timeout', 15.0))
-        rospy.loginfo("Shooting: %s", target_type)
-
-        rate = rospy.Rate(20)
-        while not rospy.is_shutdown() and rospy.Time.now() < timeout:
-            if target_type == 'circular':
-                done = self._aim_circular()
-            elif target_type == 'rotating':
-                done = self._aim_rotating()
-            elif target_type == 'moving':
-                done = self._aim_moving()
-            else:
-                rospy.logerr("Unknown target type: %s", target_type)
-                return False
-
-            if done:
-                rospy.sleep(self.global_params.get('shoot_cooldown', 2.0))
+    def _wait_for_shoot(self, flag_name, timeout=15.0):
+        """Wait until shoot flag becomes False (callback-driven)"""
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            global should_attack_circular, should_attack_rotating
+            global should_attack_moving
+            if flag_name == 'circular' and not should_attack_circular:
                 return True
+            if flag_name == 'rotating' and not should_attack_rotating:
+                return True
+            if flag_name == 'moving' and not should_attack_moving:
+                return True
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                return False
             rate.sleep()
-
-        rospy.logwarn("Shoot timeout")
-        return False
-
-    def _aim_circular(self):
-        if self.latest_object_point is None:
-            return False
-        data = self.latest_object_point
-        offset_x = data.x - 320
-        threshold = 10
-        if data.z == 34 and abs(offset_x) > threshold:
-            twist = Twist()
-            twist.angular.z = -0.02 * offset_x
-            self.cmd_vel_pub.publish(twist)
-            return False
-        elif data.z == 34 and abs(offset_x) <= threshold:
-            self._fire()
-            return True
-        return False
-
-    def _aim_rotating(self):
-        markers = self.latest_ar_markers
-        if markers is None or self.target_id_rotating is None:
-            return False
-        for marker in markers:
-            if marker.id == self.target_id_rotating:
-                ax = marker.pose.pose.position.x
-                ay = marker.pose.pose.position.y
-                if abs(ax) >= 0.1:
-                    twist = Twist()
-                    twist.angular.z = -1.0 * ax
-                    self.cmd_vel_pub.publish(twist)
-                    return False
-                elif -0.1 <= ay <= 0.1:
-                    self._fire()
-                    return True
-        return False
-
-    def _aim_moving(self):
-        markers = self.latest_ar_markers
-        if markers is None or self.target_id_moving is None:
-            return False
-        for marker in markers:
-            if marker.id == self.target_id_moving:
-                ax = marker.pose.pose.position.x
-                if abs(ax) >= 0.1:
-                    twist = Twist()
-                    twist.angular.z = -0.95 * ax
-                    self.cmd_vel_pub.publish(twist)
-                    return False
-                else:
-                    self._fire()
-                    return True
-        return False
 
     # ===================== Endpoint slide-in =====================
 
     def _slide_into_end(self, duration=3.0):
         rospy.loginfo("Sliding into endpoint...")
-        twist = Twist()
-        twist.linear.x = -0.15
-        twist.linear.y = -0.15
+        msg = Twist()
+        msg.linear.x = -0.15
+        msg.linear.y = -0.15
         start = rospy.Time.now()
         rate = rospy.Rate(20)
         while not rospy.is_shutdown():
             if (rospy.Time.now() - start).to_sec() > duration:
                 break
-            self.cmd_vel_pub.publish(twist)
+            self.pub.publish(msg)
             rate.sleep()
-        self.cmd_vel_pub.publish(Twist())
-        rospy.loginfo("Slide complete")
+        self.pub.publish(Twist())
 
     # ===================== Voice trigger =====================
 
@@ -284,67 +324,34 @@ class CompetitionControl:
                 break
             rate.sleep()
 
-    def _update_robot_pose(self):
-        try:
-            self.tf_listener.waitForTransform('map', 'base_link',
-                                              rospy.Time(0), rospy.Duration(0.5))
-            trans, _ = self.tf_listener.lookupTransform('map', 'base_link',
-                                                         rospy.Time(0))
-            self.robot_x = trans[0]
-            self.robot_y = trans[1]
-        except (tf.Exception, tf.LookupException, tf.ConnectivityException):
-            pass
-        except Exception:
-            pass
-
     def _handle_wait_start(self):
-        rospy.loginfo_throttle(5, "Waiting... (press 1 to start)")
-        rospy.loginfo("STEP: In RViz, click '2D Pose Estimate' to set robot position on map")
-        rospy.loginfo("STEP: Verify laser scan aligns with walls on the map")
-        user_input = raw_input("Press Enter after setting initial pose in RViz: ")
+        global target_id_rotating, target_id_moving
+        rospy.loginfo("STEP: Set '2D Pose Estimate' in RViz, align laser")
+        user_input = raw_input("Press Enter after setting initial pose: ")
+        # Apply YAML default IDs if voice is not running
+        if target_id_rotating is None:
+            target_id_rotating = self.target_ids.get('rotating', None)
+        if target_id_moving is None:
+            target_id_moving = self.target_ids.get('moving', None)
+        rospy.loginfo("IDs - rotating:%s moving:%s",
+                      target_id_rotating, target_id_moving)
         self.state = 'VOICE_RECV'
-        self.state_change_time = rospy.Time.now()
         rospy.loginfo("Competition started!")
 
-    def _set_initial_pose(self):
-        """将第一个 route point 设为 AMCL 初始位姿"""
-        if len(self.route_points) == 0:
-            return
-        p = self.route_points[0]
-        x, y, yaw = p['x'], p['y'], p.get('yaw', 0.0)
-        q = quaternion_from_euler(0.0, 0.0, yaw)
-        msg = PoseWithCovarianceStamped()
-        msg.header.frame_id = 'map'
-        msg.header.stamp = rospy.Time.now()
-        msg.pose.pose.position.x = x
-        msg.pose.pose.position.y = y
-        msg.pose.pose.orientation.x = q[0]
-        msg.pose.pose.orientation.y = q[1]
-        msg.pose.pose.orientation.z = q[2]
-        msg.pose.pose.orientation.w = q[3]
-        # 协方差默认值，表示中等置信度
-        msg.pose.covariance[0] = 0.25
-        msg.pose.covariance[7] = 0.25
-        msg.pose.covariance[35] = 0.068
-        for _ in range(3):
-            self.init_pose_pub.publish(msg)
-            rospy.sleep(0.2)
-        rospy.loginfo("Initial pose set: (%.3f, %.3f, yaw=%.2f)", x, y, yaw)
-
     def _handle_voice_recv(self):
+        global target_id_rotating, target_id_moving
         self._trigger_voice()
         rospy.sleep(18)
-        # 如果语音没启动，使用 YAML 中的默认 ID
-        if self.target_id_rotating is None:
-            self.target_id_rotating = self.target_ids.get('rotating', None)
-        if self.target_id_moving is None:
-            self.target_id_moving = self.target_ids.get('moving', None)
-        rospy.loginfo("Target IDs - rotating: %s, moving: %s",
-                      self.target_id_rotating, self.target_id_moving)
+        # Use YAML defaults if voice didn't update IDs
+        if target_id_rotating is None:
+            target_id_rotating = self.target_ids.get('rotating', None)
+        if target_id_moving is None:
+            target_id_moving = self.target_ids.get('moving', None)
+        rospy.loginfo("IDs - rotating:%s moving:%s",
+                      target_id_rotating, target_id_moving)
         self.state = 'NAV_LOOP'
         self.current_point_index = 0
-        self.state_change_time = rospy.Time.now()
-        rospy.loginfo("NAV_LOOP: %d route points", len(self.route_points))
+        rospy.loginfo("NAV_LOOP: %d points", len(self.route_points))
 
     def _handle_nav_loop(self):
         if self.current_point_index >= len(self.route_points):
@@ -353,21 +360,22 @@ class CompetitionControl:
 
         point = self.route_points[self.current_point_index]
         ptype = point.get('type', 'relay')
-        name = _safe(point.get('name', 'unknown'))
-        x, y, yaw = point['x'], point['y'], point.get('yaw', 0.0)
-        # 诊断：打印当前机器人位置
-        rospy.loginfo("[%d/%d] %s -> target(%.3f,%.3f) robot_at(%.3f,%.3f)",
+        name = str(point.get('name', 'unknown'))
+        x, y = point['x'], point['y']
+        yaw_deg = point.get('yaw', 0.0)  # degrees
+
+        rospy.loginfo("[%d/%d] %s target(%.3f,%.3f) robot(%.3f,%.3f)",
                       self.current_point_index + 1, len(self.route_points),
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
             threshold = self.global_params.get('relay_close_threshold', 0.10)
-            if self._distance_to(x, y) < threshold:
-                rospy.loginfo("Already at %s", name)
+            if self._close_enough(x, y, threshold):
+                rospy.loginfo("Already at relay: %s", name)
             else:
-                self._navigate_to(x, y, yaw, timeout=30.0)
+                self.goto(x, y, yaw_deg, timeout=30.0)
                 self._update_robot_pose()
-                if self._distance_to(x, y) < threshold:
+                if self._close_enough(x, y, threshold):
                     rospy.loginfo("Reached relay: %s", name)
                 else:
                     rospy.logwarn("Skip relay: %s", name)
@@ -375,38 +383,52 @@ class CompetitionControl:
 
         elif ptype == 'task':
             target_type = point.get('target_type', 'circular')
-            self._navigate_to(x, y, yaw,
-                              self.global_params.get('task_timeout', 60.0))
+            self.goto(x, y, yaw_deg,
+                      self.global_params.get('task_timeout', 60.0))
             self._update_robot_pose()
             zone = point.get('task_zone', None)
-            if self._is_in_task_zone(zone):
+            if self._in_task_zone(zone):
                 rospy.loginfo("In task zone: %s", name)
-                shoot_ok = self._shoot_sequence(target_type, point)
+                if target_type == 'circular':
+                    global should_attack_circular
+                    should_attack_circular = True
+                    shoot_ok = self._wait_for_shoot('circular',
+                        self.global_params.get('shoot_timeout', 15.0))
+                elif target_type == 'rotating':
+                    global should_attack_rotating
+                    should_attack_rotating = True
+                    shoot_ok = self._wait_for_shoot('rotating',
+                        self.global_params.get('shoot_timeout', 15.0))
+                elif target_type == 'moving':
+                    global should_attack_moving
+                    should_attack_moving = True
+                    shoot_ok = self._wait_for_shoot('moving',
+                        self.global_params.get('shoot_timeout', 15.0))
+                else:
+                    shoot_ok = False
                 if shoot_ok:
                     rospy.loginfo("Task done: %s", name)
                 else:
-                    rospy.logwarn("Shoot failed: %s", name)
+                    rospy.logwarn("Shoot timeout: %s", name)
             else:
                 rospy.logwarn("Not in task zone: %s, skip", name)
             self.current_point_index += 1
 
         elif ptype == 'end':
-            self._navigate_to(x, y, yaw)
+            self.goto(x, y, yaw_deg)
             threshold = self.global_params.get('end_close_threshold', 0.15)
-            if self._distance_to(x, y) < threshold:
+            if self._close_enough(x, y, threshold):
                 rospy.loginfo("Near endpoint, sliding in")
-                self._cancel_nav()
+                self.cancel()
             else:
                 rospy.logwarn("Not near endpoint, slide anyway")
             self._slide_into_end()
             self.state = 'FINISH'
 
-        self.state_change_time = rospy.Time.now()
-
     def _handle_finish(self):
         rospy.loginfo("========== COMPETITION FINISHED! ==========")
-        self._cancel_nav()
-        self.cmd_vel_pub.publish(Twist())
+        self.cancel()
+        self.pub.publish(Twist())
 
 
 if __name__ == '__main__':
