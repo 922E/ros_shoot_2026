@@ -2,14 +2,6 @@
 # 状态机按 route_points 列表顺序依次遍历
 
 route_points:
-  # ── 起点 ──
-  - id: 0
-    name: "起点"
-    type: "relay"
-    x: -0.98
-    y: -0.98
-    yaw: 0.0
-
   # ── 射击点1: 环形计分靶 (20分) ──
   - id: 1
     name: "射击点1-环形靶"

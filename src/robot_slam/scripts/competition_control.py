@@ -287,7 +287,7 @@ class CompetitionControl:
     def _update_robot_pose(self):
         try:
             self.tf_listener.waitForTransform('map', 'base_link',
-                                              rospy.Time(0), rospy.Duration(0.1))
+                                              rospy.Time(0), rospy.Duration(0.5))
             trans, _ = self.tf_listener.lookupTransform('map', 'base_link',
                                                          rospy.Time(0))
             self.robot_x = trans[0]
@@ -355,6 +355,10 @@ class CompetitionControl:
         ptype = point.get('type', 'relay')
         name = _safe(point.get('name', 'unknown'))
         x, y, yaw = point['x'], point['y'], point.get('yaw', 0.0)
+        # 诊断：打印当前机器人位置
+        rospy.loginfo("[%d/%d] %s -> target(%.3f,%.3f) robot_at(%.3f,%.3f)",
+                      self.current_point_index + 1, len(self.route_points),
+                      name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
             threshold = self.global_params.get('relay_close_threshold', 0.10)
