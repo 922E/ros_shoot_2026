@@ -366,6 +366,7 @@ class CompetitionControl:
                 rospy.loginfo("Already at %s", name)
             else:
                 self._navigate_to(x, y, yaw, timeout=30.0)
+                self._update_robot_pose()
                 if self._distance_to(x, y) < threshold:
                     rospy.loginfo("Reached relay: %s", name)
                 else:
@@ -376,6 +377,7 @@ class CompetitionControl:
             target_type = point.get('target_type', 'circular')
             self._navigate_to(x, y, yaw,
                               self.global_params.get('task_timeout', 60.0))
+            self._update_robot_pose()
             zone = point.get('task_zone', None)
             if self._is_in_task_zone(zone):
                 rospy.loginfo("In task zone: %s", name)
