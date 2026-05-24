@@ -13,7 +13,7 @@ import os
 import tf
 from actionlib_msgs.msg import GoalStatus
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Point
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Twist, Point
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_msgs.msg import String, Int32
 import actionlib
@@ -46,13 +46,14 @@ class CompetitionControl:
 
         route_path = rospy.get_param('~route_config',
                                      self._default_route_path())
-        self.route_points, self.global_params = self._load_route(route_path)
+        self.route_points, self.global_params, self.target_ids = self._load_route(route_path)
         rospy.loginfo("Loaded route: %d points", len(self.route_points))
 
         self.state = 'WAIT_START'
         self.current_point_index = 0
         self.state_change_time = rospy.Time.now()
 
+        # 先用默认值，语音模块会覆盖
         self.target_id_rotating = None
         self.target_id_moving = None
         self.latest_ar_markers = None
@@ -68,6 +69,8 @@ class CompetitionControl:
         self.shoot_pub = rospy.Publisher('/shoot', String, queue_size=10)
         self.audio_pub = rospy.Publisher('audio_topic', String, queue_size=10)
         self.state_pub = rospy.Publisher('/competition_state', String, queue_size=10)
+        self.init_pose_pub = rospy.Publisher('/initialpose',
+                                             PoseWithCovarianceStamped, queue_size=5)
 
         # Subscribers
         rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self._ar_callback)
@@ -92,7 +95,7 @@ class CompetitionControl:
     def _load_route(self, path):
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
-        return data['route_points'], data.get('global', {})
+        return data['route_points'], data.get('global', {}), data.get('target_ids', {})
 
     # ===================== Callbacks =====================
 
@@ -302,9 +305,43 @@ class CompetitionControl:
             self.state_change_time = rospy.Time.now()
             rospy.loginfo("Competition started!")
 
+    def _set_initial_pose(self):
+        """将第一个 route point 设为 AMCL 初始位姿"""
+        if len(self.route_points) == 0:
+            return
+        p = self.route_points[0]
+        x, y, yaw = p['x'], p['y'], p.get('yaw', 0.0)
+        q = quaternion_from_euler(0.0, 0.0, yaw)
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = rospy.Time.now()
+        msg.pose.pose.position.x = x
+        msg.pose.pose.position.y = y
+        msg.pose.pose.orientation.x = q[0]
+        msg.pose.pose.orientation.y = q[1]
+        msg.pose.pose.orientation.z = q[2]
+        msg.pose.pose.orientation.w = q[3]
+        # 协方差默认值，表示中等置信度
+        msg.pose.covariance[0] = 0.25
+        msg.pose.covariance[7] = 0.25
+        msg.pose.covariance[35] = 0.068
+        for _ in range(3):
+            self.init_pose_pub.publish(msg)
+            rospy.sleep(0.2)
+        rospy.loginfo("Initial pose set: (%.3f, %.3f, yaw=%.2f)", x, y, yaw)
+
     def _handle_voice_recv(self):
         self._trigger_voice()
         rospy.sleep(18)
+        # 如果语音没启动，使用 YAML 中的默认 ID
+        if self.target_id_rotating is None:
+            self.target_id_rotating = self.target_ids.get('rotating', None)
+        if self.target_id_moving is None:
+            self.target_id_moving = self.target_ids.get('moving', None)
+        rospy.loginfo("Target IDs - rotating: %s, moving: %s",
+                      self.target_id_rotating, self.target_id_moving)
+        self._set_initial_pose()
+        rospy.sleep(1)
         self.state = 'NAV_LOOP'
         self.current_point_index = 0
         self.state_change_time = rospy.Time.now()

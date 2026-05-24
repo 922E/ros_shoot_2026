@@ -76,6 +76,11 @@ route_points:
     y: -4.52
     yaw: 0.0
 
+# 目标ID (语音可用时自动覆盖，语音未启动时使用此默认值)
+target_ids:
+  rotating: 1      # 旋转靶 AR 标签 ID (无语音时使用)
+  moving: 6        # 移动靶 AR 标签 ID (无语音时使用)
+
 # 全局参数
 global:
   relay_close_threshold: 0.10    # 中继点判近距离 (米)
