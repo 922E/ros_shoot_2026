@@ -8,7 +8,7 @@ import serial
 import yaml
 import os
 from move_base_msgs.msg import MoveBaseAction
-from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Point
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, Twist, Point
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_msgs.msg import String, Int32
 from math import pi
