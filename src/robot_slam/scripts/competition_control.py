@@ -15,6 +15,13 @@ from std_msgs.msg import String, Int32
 from math import pi
 import tf
 
+
+def _safe(s):
+    """Safe str for Python 2: encode unicode to utf-8 bytes"""
+    if isinstance(s, unicode):
+        return s.encode('utf-8')
+    return str(s)
+
 # Target thresholds (same as shoot_2025.py)
 Yaw_th = 0.1
 Yaw_th1 = 0.1
@@ -366,7 +373,7 @@ class CompetitionControl:
 
         point = self.route_points[self.current_point_index]
         ptype = point.get('type', 'relay')
-        name = str(point.get('name', 'unknown'))
+        name = _safe(point.get('name', 'unknown'))
         x, y = point['x'], point['y']
         yaw_deg = point.get('yaw', 0.0)  # degrees
 
