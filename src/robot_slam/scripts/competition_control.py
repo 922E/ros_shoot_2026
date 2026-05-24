@@ -299,11 +299,12 @@ class CompetitionControl:
 
     def _handle_wait_start(self):
         rospy.loginfo_throttle(5, "Waiting... (press 1 to start)")
-        user_input = raw_input("Input 1 to start: ")
-        if user_input == '1':
-            self.state = 'VOICE_RECV'
-            self.state_change_time = rospy.Time.now()
-            rospy.loginfo("Competition started!")
+        rospy.loginfo("STEP: In RViz, click '2D Pose Estimate' to set robot position on map")
+        rospy.loginfo("STEP: Verify laser scan aligns with walls on the map")
+        user_input = raw_input("Press Enter after setting initial pose in RViz: ")
+        self.state = 'VOICE_RECV'
+        self.state_change_time = rospy.Time.now()
+        rospy.loginfo("Competition started!")
 
     def _set_initial_pose(self):
         """将第一个 route point 设为 AMCL 初始位姿"""
@@ -340,8 +341,6 @@ class CompetitionControl:
             self.target_id_moving = self.target_ids.get('moving', None)
         rospy.loginfo("Target IDs - rotating: %s, moving: %s",
                       self.target_id_rotating, self.target_id_moving)
-        self._set_initial_pose()
-        rospy.sleep(1)
         self.state = 'NAV_LOOP'
         self.current_point_index = 0
         self.state_change_time = rospy.Time.now()
