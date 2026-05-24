@@ -15,12 +15,6 @@ from std_msgs.msg import String, Int32
 from math import pi
 import tf
 
-# Shoot serial port (same as shoot_2025.py)
-serialPort = "/dev/shoot"
-baudRate = 9600
-ser = serial.Serial(port=serialPort, baudrate=baudRate, parity="N",
-                    bytesize=8, stopbits=1)
-
 # Target thresholds (same as shoot_2025.py)
 Yaw_th = 0.1
 Yaw_th1 = 0.1
@@ -78,6 +72,15 @@ class CompetitionControl:
         self.move_base = actionlib.SimpleActionClient("move_base",
                                                        MoveBaseAction)
         self.move_base.wait_for_server(rospy.Duration(60))
+
+        # Serial port (init inside class, not at module level)
+        self.ser = None
+        try:
+            self.ser = serial.Serial(port="/dev/shoot", baudrate=9600,
+                                     parity="N", bytesize=8, stopbits=1)
+            rospy.loginfo("Serial port /dev/shoot opened")
+        except Exception:
+            rospy.logwarn("/dev/shoot not available, shoot disabled")
 
         # TF listener
         self.tf_listener = tf.TransformListener()
@@ -259,9 +262,12 @@ class CompetitionControl:
 
     def _fire(self):
         """Fire using serial (same as shoot_2025.py)"""
-        ser.write(b'\x55\x01\x12\x00\x00\x00\x01\x69')
+        if self.ser is None:
+            rospy.logwarn("Serial not available, cannot fire")
+            return
+        self.ser.write(b'\x55\x01\x12\x00\x00\x00\x01\x69')
         rospy.sleep(0.09)
-        ser.write(b'\x55\x01\x11\x00\x00\x00\x01\x68')
+        self.ser.write(b'\x55\x01\x11\x00\x00\x00\x01\x68')
 
     def _wait_for_shoot(self, flag_name, timeout=15.0):
         """Wait until shoot flag becomes False (callback-driven)"""
