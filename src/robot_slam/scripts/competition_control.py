@@ -346,12 +346,14 @@ class CompetitionControl:
         x, y, yaw = point['x'], point['y'], point.get('yaw', 0.0)
 
         if ptype == 'relay':
-            # 中继点: 导航 → 判近 → 下一个
+            # 中继点: 导航 → 判近 → 下一个（失败也跳过）
             self._navigate_to(x, y, yaw)
             threshold = self.global_params.get('relay_close_threshold', 0.10)
             if self._distance_to(x, y) < threshold:
                 rospy.loginfo("到达中继点: %s", name)
-                self.current_point_index += 1
+            else:
+                rospy.logwarn("未到达中继点: %s, 跳过", name)
+            self.current_point_index += 1
 
         elif ptype == 'task':
             # 任务点: 导航 → footprint 判定 → 射击 → 下一个
@@ -360,27 +362,30 @@ class CompetitionControl:
                                        self.global_params.get('task_timeout', 60.0))
             if not nav_ok:
                 rospy.logwarn("任务点导航未达到, 尝试射击")
-            # 检查是否在任务区域内
             zone = point.get('task_zone', None)
             if self._is_in_task_zone(zone):
                 rospy.loginfo("进入任务区域: %s", name)
                 shoot_ok = self._shoot_sequence(target_type, point)
                 if shoot_ok:
                     rospy.loginfo("任务完成: %s", name)
-                    self.current_point_index += 1
                 else:
                     rospy.logwarn("射击未完成, 跳过: %s", name)
-                    self.current_point_index += 1  # 超时后也跳过
+            else:
+                rospy.logwarn("未进入任务区域: %s, 跳过", name)
+            self.current_point_index += 1
 
         elif ptype == 'end':
-            # 终点: 导航 → 判近 → 滑入 → 完成
+            # 终点: 导航 → 判近 → 滑入 → 完成（失败也继续）
             self._navigate_to(x, y, yaw)
             threshold = self.global_params.get('end_close_threshold', 0.15)
             if self._distance_to(x, y) < threshold:
                 rospy.loginfo("到达终点附近, 开始滑入")
                 self._cancel_nav()
                 self._slide_into_end()
-                self.state = 'FINISH'
+            else:
+                rospy.logwarn("未到达终点附近, 直接滑入")
+                self._slide_into_end()
+            self.state = 'FINISH'
 
         self.state_change_time = rospy.Time.now()
 
