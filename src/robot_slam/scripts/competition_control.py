@@ -346,13 +346,16 @@ class CompetitionControl:
         x, y, yaw = point['x'], point['y'], point.get('yaw', 0.0)
 
         if ptype == 'relay':
-            # 中继点: 导航 → 判近 → 下一个（失败也跳过）
-            self._navigate_to(x, y, yaw)
+            # 中继点: 只有不在附近时才导航，失败也跳过
             threshold = self.global_params.get('relay_close_threshold', 0.10)
             if self._distance_to(x, y) < threshold:
-                rospy.loginfo("到达中继点: %s", name)
+                rospy.loginfo("已在到达中继点: %s", name)
             else:
-                rospy.logwarn("未到达中继点: %s, 跳过", name)
+                self._navigate_to(x, y, yaw, timeout=30.0)
+                if self._distance_to(x, y) < threshold:
+                    rospy.loginfo("到达中继点: %s", name)
+                else:
+                    rospy.logwarn("未到达中继点: %s, 跳过", name)
             self.current_point_index += 1
 
         elif ptype == 'task':
