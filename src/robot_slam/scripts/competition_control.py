@@ -7,8 +7,7 @@ import actionlib
 import serial
 import yaml
 import os
-from actionlib_msgs.msg import GoalStatus
-from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from move_base_msgs.msg import MoveBaseAction
 from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Point
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from std_msgs.msg import String, Int32
@@ -75,7 +74,10 @@ class CompetitionControl:
                                                      Int32,
                                                      self._moving_id_cb)
 
-        # move_base client (match shoot_2025.py)
+        # 2D Nav Goal publisher (same as RViz, proven working)
+        self.goal_pub = rospy.Publisher('/move_base_simple/goal',
+                                        PoseStamped, queue_size=5)
+        # actionlib only for cancel
         self.move_base = actionlib.SimpleActionClient("move_base",
                                                        MoveBaseAction)
         self.move_base.wait_for_server(rospy.Duration(60))
@@ -191,41 +193,36 @@ class CompetitionControl:
         self.set_pose_pub.publish(pose)
 
     def goto(self, x, y, yaw_deg, timeout=60.0):
-        """Navigate using actionlib (same as shoot_2025.py)"""
-        goal = MoveBaseGoal()
-        goal.target_pose.header.frame_id = 'map'
-        goal.target_pose.header.stamp = rospy.Time.now()
-        goal.target_pose.pose.position.x = x
-        goal.target_pose.pose.position.y = y
+        """Navigate using /move_base_simple/goal (same as RViz 2D Nav Goal)"""
+        goal = PoseStamped()
+        goal.header.frame_id = 'map'
+        goal.header.stamp = rospy.Time.now()
+        goal.pose.position.x = x
+        goal.pose.position.y = y
+        goal.pose.position.z = 0.0
         q = self._quat_from_euler(0.0, 0.0, yaw_deg / 180.0 * pi)
-        goal.target_pose.pose.orientation.x = q[0]
-        goal.target_pose.pose.orientation.y = q[1]
-        goal.target_pose.pose.orientation.z = q[2]
-        goal.target_pose.pose.orientation.w = q[3]
+        goal.pose.orientation.x = q[0]
+        goal.pose.orientation.y = q[1]
+        goal.pose.orientation.z = q[2]
+        goal.pose.orientation.w = q[3]
 
         rospy.loginfo("Nav to: (%.3f, %.3f)", x, y)
-        self.move_base.send_goal(goal, self._done_cb, self._active_cb,
-                                 self._feedback_cb)
-        result = self.move_base.wait_for_result(rospy.Duration(timeout))
-        if not result:
-            self.move_base.cancel_goal()
-            rospy.logwarn("Nav timeout")
-            return False
-        state = self.move_base.get_state()
-        if state == GoalStatus.SUCCEEDED:
-            rospy.loginfo("Nav succeeded")
-            return True
-        rospy.logwarn("Nav failed, status=%d", state)
-        return False
+        self.goal_pub.publish(goal)
 
-    def _done_cb(self, status, result):
-        pass
-
-    def _active_cb(self):
-        pass
-
-    def _feedback_cb(self, feedback):
-        pass
+        # Poll position until close or timeout
+        start = rospy.Time.now()
+        rate = rospy.Rate(5)
+        while not rospy.is_shutdown():
+            self._update_robot_pose()
+            d = math.hypot(self.robot_x - x, self.robot_y - y)
+            if d < 0.15:
+                rospy.loginfo("Nav reached, dist=%.3f", d)
+                return True
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                rospy.logwarn("Nav timeout, dist=%.3f", d)
+                self.move_base.cancel_all_goals()
+                return False
+            rate.sleep()
 
     def cancel(self):
         self.move_base.cancel_all_goals()
