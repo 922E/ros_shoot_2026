@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 2026 射击挑战赛 — 比赛主控节点
@@ -320,10 +320,7 @@ class CompetitionControl:
 
     def _handle_wait_start(self):
         rospy.loginfo_throttle(5, "等待启动... (输入 1 开始比赛)")
-        try:
-            user_input = raw_input("请输入 1 开始: ")
-        except NameError:
-            user_input = input("请输入 1 开始: ")
+        user_input = raw_input("请输入 1 开始: ")
         if user_input == '1':
             self.state = 'VOICE_RECV'
             self.state_change_time = rospy.Time.now()
