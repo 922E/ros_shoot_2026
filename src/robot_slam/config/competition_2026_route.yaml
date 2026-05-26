@@ -14,20 +14,15 @@ route_points:
     type: "task"
     target_type: "circular"
     x: 1.225
-    y: -0.334
+    y: -0.514
     yaw: 0.0
-    task_zone:
-      x_min: 1.035
-      x_max: 1.415
-      y_min: -0.494
-      y_max: -0.174
 
   # ── 途经点1 ──
   - id: 2
     name: "途经点1"
     type: "relay"
     x: 0.167
-    y: -1.064
+    y: -0.964
     yaw: 0.0
 
   # ── 射击点2: 旋转靶 (15分) ──
@@ -35,14 +30,9 @@ route_points:
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
-    x: 0.927
+    x: 1.227
     y: -1.636
     yaw: 0.0
-    task_zone:
-      x_min: 0.737
-      x_max: 1.117
-      y_min: -1.796
-      y_max: -1.476
 
   # ── 途经点2 ──
   - id: 4
@@ -57,30 +47,31 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
-    x: 0.976
+    x: 1.176
     y: -2.927
     yaw: 0.0
-    task_zone:
-      x_min: 0.786
-      x_max: 1.166
-      y_min: -3.087
-      y_max: -2.767
 
   # ── 终点区域 (10分) ──
+  # 终点靠近围栏，costmap 不允许直接导航。
+  # 先到 pre_point（安全的可到达位置），再用 cmd_vel 低速滑入
   - id: 6
     name: "终点"
     type: "end"
     x: 0.055
-    y: -3.248
+    y: -3.200
     yaw: 0.0
+    pre_point:
+      x: 0.40
+      y: -3.09
+      yaw: 0.0
 
 target_ids:
   rotating: 1
   moving: 6
 
 global:
-  relay_close_threshold: 0.10
-  end_close_threshold: 0.15
+  relay_close_threshold: 0.12
+  end_close_threshold: 0.08
   task_timeout: 60.0
   shoot_timeout: 15.0
   shoot_cooldown: 2.0

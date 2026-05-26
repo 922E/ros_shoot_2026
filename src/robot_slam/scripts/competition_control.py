@@ -283,11 +283,9 @@ class CompetitionControl:
     def _close_enough(self, x, y, threshold):
         return math.hypot(self.robot_x - x, self.robot_y - y) < threshold
 
-    def _in_task_zone(self, zone):
-        if zone is None:
-            return False
-        return (zone['x_min'] <= self.robot_x <= zone['x_max'] and
-                zone['y_min'] <= self.robot_y <= zone['y_max'])
+    def _in_task_zone(self, x, y):
+        """Check if robot is within 0.10m of task point center (dynamic zone)"""
+        return math.hypot(self.robot_x - x, self.robot_y - y) < 0.10
 
     # ===================== Shooting =====================
 
@@ -319,19 +317,30 @@ class CompetitionControl:
 
     # ===================== Endpoint slide-in =====================
 
-    def _slide_into_end(self, duration=3.0):
-        rospy.loginfo("Sliding into endpoint...")
-        msg = Twist()
-        msg.linear.x = -0.15
-        msg.linear.y = -0.15
+    def _slide_to_point(self, x, y, speed=0.08, timeout=6.0):
+        """Slide toward target with low-speed cmd_vel, bypassing costmap"""
+        rospy.loginfo("[END] Sliding to (%.3f,%.3f) speed=%.3f", x, y, speed)
         start = rospy.Time.now()
-        rate = rospy.Rate(20)
+        rate = rospy.Rate(10)
         while not rospy.is_shutdown():
-            if (rospy.Time.now() - start).to_sec() > duration:
-                break
+            self._update_robot_pose()
+            dx = x - self.robot_x
+            dy = y - self.robot_y
+            d = math.hypot(dx, dy)
+            if d < 0.05:
+                self.pub.publish(Twist())
+                rospy.loginfo("[END] Slide complete, dist=%.3f", d)
+                return True
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                self.pub.publish(Twist())
+                rospy.logwarn("[END] Slide timeout, dist=%.3f", d)
+                return False
+            msg = Twist()
+            msg.linear.x = max(-speed, min(speed, dx * 0.5))
+            msg.linear.y = max(-speed, min(speed, dy * 0.5))
             self.pub.publish(msg)
             rate.sleep()
-        self.pub.publish(Twist())
+        return False
 
     # ===================== Voice trigger =====================
 
@@ -433,8 +442,7 @@ class CompetitionControl:
             # Fine adjust if slightly off
             if d > task_tol:
                 self._fine_adjust(x, y, tol=task_tol)
-            zone = point.get('task_zone', None)
-            if self._in_task_zone(zone):
+            if self._in_task_zone(x, y):
                 rospy.loginfo("[TASK] In zone: %s", name)
                 if self.ser is None:
                     # Dry-run: skip shoot wait
@@ -467,16 +475,17 @@ class CompetitionControl:
             self.current_point_index += 1
 
         elif ptype == 'end':
-            end_tol = 0.08
-            self.goto(x, y, yaw_deg, tol=end_tol)
-            self._update_robot_pose()
-            d = math.hypot(self.robot_x - x, self.robot_y - y)
-            if d < end_tol:
-                rospy.loginfo("[END] Near endpoint, sliding in (dist=%.3f)", d)
+            # Navigate to pre-point (safe distance from wall), then slide in
+            pre = point.get('pre_point', None)
+            if pre:
+                self.goto(pre['x'], pre['y'], pre.get('yaw', yaw_deg),
+                          timeout=60.0, tol=0.12)
+                self._update_robot_pose()
+                rospy.loginfo("[END] Pre-point reached, now sliding to endpoint")
             else:
-                rospy.logwarn("[END] dist=%.3f > tol, slide anyway", d)
+                rospy.loginfo("[END] No pre-point, sliding from current position")
             self.cancel()
-            self._slide_into_end()
+            self._slide_to_point(x, y)
             self.state = 'FINISH'
 
     def _handle_finish(self):
