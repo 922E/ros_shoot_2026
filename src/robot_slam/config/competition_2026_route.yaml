@@ -24,6 +24,14 @@ route_points:
     y: -1.064
     yaw: 0.0
 
+  # ── shoot2_pre: 射击点2的预进入点，确保从左向右接近，yaw 正确 ──
+  - id: 7
+    name: "shoot2_pre"
+    type: "relay"
+    x: 0.85
+    y: -1.70
+    yaw: 0.0
+
   # ── 射击点2: 旋转靶 (15分) ──
   - id: 3
     name: "射击点2-旋转靶"

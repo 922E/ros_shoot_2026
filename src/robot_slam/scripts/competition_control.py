@@ -226,13 +226,18 @@ class CompetitionControl:
                 return False
             rate.sleep()
 
-    def _fine_adjust_to_pose(self, x, y, pos_tol=0.05, timeout=8.0):
-        """Face target first, then approach. Prevents wrong-direction drift."""
+    def _fine_adjust_to_pose(self, x, y, target_yaw_deg=None,
+                              pos_tol=0.05, yaw_tol=10.0, timeout=10.0):
+        """Fix position, then fix yaw if target_yaw_deg is given."""
+        target_yaw = target_yaw_deg / 180.0 * pi if target_yaw_deg is not None else None
         ryaw = self._get_robot_yaw()
-        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f robot_yaw=%.0fdeg",
-                      x, y, pos_tol, ryaw * 180.0 / pi)
+        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f,%.0fdeg) tol_xy=%.3f tol_yaw=%.0fdeg robot_yaw=%.0fdeg",
+                      x, y, target_yaw_deg if target_yaw_deg is not None else -999,
+                      pos_tol, yaw_tol, ryaw * 180.0 / pi)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
+
+        # Step 1: fix position
         while not rospy.is_shutdown():
             self._update_robot_pose()
             dx = x - self.robot_x
@@ -240,25 +245,45 @@ class CompetitionControl:
             d = math.hypot(dx, dy)
             if d < pos_tol:
                 self.pub.publish(Twist())
-                rospy.loginfo("[FINE_ADJUST] OK dist=%.3f", d)
-                return True
+                rospy.loginfo("[FINE_ADJUST] xy OK dist=%.3f", d)
+                break
             if (rospy.Time.now() - start).to_sec() > timeout:
                 self.pub.publish(Twist())
-                rospy.logwarn("[FINE_ADJUST] timeout dist=%.3f", d)
-                return False
-            # Target direction in map frame
+                rospy.logwarn("[FINE_ADJUST] xy timeout dist=%.3f", d)
+                break
             target_dir = math.atan2(dy, dx)
             yaw_err = self._get_robot_yaw_error(target_dir)
             msg = Twist()
-            if abs(yaw_err) > 0.3:  # >17deg: rotate first
+            if abs(yaw_err) > 0.3:
                 msg.angular.z = max(-0.5, min(0.5, yaw_err * 1.0))
             else:
-                # Facing target: approach
                 msg.linear.x = max(-0.08, min(0.08, d * 0.3))
                 msg.angular.z = max(-0.3, min(0.3, yaw_err * 0.5))
             self.pub.publish(msg)
             rate.sleep()
-        return False
+
+        # Step 2: fix yaw to target
+        if target_yaw is not None:
+            start2 = rospy.Time.now()
+            while not rospy.is_shutdown():
+                yaw_err = self._get_robot_yaw_error(target_yaw)
+                if abs(yaw_err) < yaw_tol / 180.0 * pi:
+                    self.pub.publish(Twist())
+                    ryaw = self._get_robot_yaw()
+                    rospy.loginfo("[FINE_ADJUST] yaw OK err=%.0fdeg robot_yaw=%.0fdeg",
+                                  yaw_err * 180.0 / pi, ryaw * 180.0 / pi)
+                    return True
+                if (rospy.Time.now() - start2).to_sec() > 4.0:
+                    self.pub.publish(Twist())
+                    rospy.logwarn("[FINE_ADJUST] yaw timeout err=%.0fdeg",
+                                  yaw_err * 180.0 / pi)
+                    break
+                msg = Twist()
+                msg.angular.z = max(-0.5, min(0.5, yaw_err * 1.0))
+                self.pub.publish(msg)
+                rate.sleep()
+
+        return d < pos_tol if 'd' in dir() else False
 
     def _get_robot_yaw(self):
         """Get current robot yaw from TF. Returns radians, or 0 on failure."""
@@ -481,7 +506,7 @@ class CompetitionControl:
             self.goto(x, y, yaw_deg, timeout=15.0, tol=rough_tol)
             self.cancel()
             # Step 2: fine adjust position + yaw
-            self._fine_adjust_to_pose(x, y)
+            self._fine_adjust_to_pose(x, y, target_yaw_deg=task_yaw)
             if self._in_task_zone(x, y):
                 self._log_pose("TASK", name, x, y, task_yaw)
                 if self.ser is None:
