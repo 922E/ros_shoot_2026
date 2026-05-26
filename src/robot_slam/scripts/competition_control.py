@@ -192,8 +192,8 @@ class CompetitionControl:
         pose.pose.pose.orientation.w = q[3]
         self.set_pose_pub.publish(pose)
 
-    def goto(self, x, y, yaw_deg, timeout=60.0):
-        """Navigate using /move_base_simple/goal (same as RViz 2D Nav Goal)"""
+    def goto(self, x, y, yaw_deg, timeout=60.0, tol=0.15):
+        """Navigate using /move_base_simple/goal. tol=0.05 for task, 0.12 for relay"""
         goal = PoseStamped()
         goal.header.frame_id = 'map'
         goal.header.stamp = rospy.Time.now()
@@ -206,23 +206,50 @@ class CompetitionControl:
         goal.pose.orientation.z = q[2]
         goal.pose.orientation.w = q[3]
 
-        rospy.loginfo("Nav to: (%.3f, %.3f)", x, y)
+        rospy.loginfo("Nav to: (%.3f, %.3f) tol=%.3f", x, y, tol)
         self.goal_pub.publish(goal)
 
-        # Poll position until close or timeout
         start = rospy.Time.now()
-        rate = rospy.Rate(5)
+        rate = rospy.Rate(10)
         while not rospy.is_shutdown():
             self._update_robot_pose()
             d = math.hypot(self.robot_x - x, self.robot_y - y)
-            if d < 0.15:
-                rospy.loginfo("Nav reached, dist=%.3f", d)
+            if d < tol:
+                rospy.loginfo("[ARRIVE] %s dist=%.3f tol=%.3f robot=(%.3f,%.3f)",
+                              "OK" if d < tol else "FAR", d, tol,
+                              self.robot_x, self.robot_y)
                 return True
             if (rospy.Time.now() - start).to_sec() > timeout:
-                rospy.logwarn("Nav timeout, dist=%.3f", d)
+                rospy.logwarn("[ARRIVE] TIMEOUT dist=%.3f tol=%.3f robot=(%.3f,%.3f)",
+                              d, tol, self.robot_x, self.robot_y)
                 self.move_base.cancel_all_goals()
                 return False
             rate.sleep()
+
+    def _fine_adjust(self, x, y, tol=0.05, timeout=5.0):
+        """Low-speed fine positioning for task points"""
+        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f", x, y, tol)
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            self._update_robot_pose()
+            dx = x - self.robot_x
+            dy = y - self.robot_y
+            d = math.hypot(dx, dy)
+            if d < tol:
+                self.pub.publish(Twist())  # stop
+                rospy.loginfo("[FINE_ADJUST] OK dist=%.3f", d)
+                return True
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                self.pub.publish(Twist())
+                rospy.logwarn("[FINE_ADJUST] TIMEOUT dist=%.3f", d)
+                return False
+            msg = Twist()
+            msg.linear.x = max(-0.08, min(0.08, dx * 0.3))
+            msg.linear.y = max(-0.08, min(0.08, dy * 0.3))
+            self.pub.publish(msg)
+            rate.sleep()
+        return False
 
     def cancel(self):
         self.move_base.cancel_all_goals()
@@ -385,27 +412,35 @@ class CompetitionControl:
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
-            threshold = self.global_params.get('relay_close_threshold', 0.10)
+            threshold = self.global_params.get('relay_close_threshold', 0.12)
             if self._close_enough(x, y, threshold):
-                rospy.loginfo("Already at relay: %s", name)
+                rospy.loginfo("[RELAY] Already at: %s", name)
             else:
-                self.goto(x, y, yaw_deg, timeout=30.0)
+                self.goto(x, y, yaw_deg, timeout=30.0, tol=threshold)
                 self._update_robot_pose()
-                if self._close_enough(x, y, threshold):
-                    rospy.loginfo("Reached relay: %s", name)
-                else:
-                    rospy.logwarn("Skip relay: %s", name)
+                if not self._close_enough(x, y, threshold):
+                    rospy.logwarn("[RELAY] Skip: %s", name)
             self.current_point_index += 1
 
         elif ptype == 'task':
             target_type = point.get('target_type', 'circular')
+            task_tol = 0.05
             self.goto(x, y, yaw_deg,
-                      self.global_params.get('task_timeout', 60.0))
+                      self.global_params.get('task_timeout', 60.0),
+                      tol=task_tol)
             self._update_robot_pose()
+            d = math.hypot(self.robot_x - x, self.robot_y - y)
+            # Fine adjust if slightly off
+            if d > task_tol:
+                self._fine_adjust(x, y, tol=task_tol)
             zone = point.get('task_zone', None)
             if self._in_task_zone(zone):
-                rospy.loginfo("In task zone: %s", name)
-                if target_type == 'circular':
+                rospy.loginfo("[TASK] In zone: %s", name)
+                if self.ser is None:
+                    # Dry-run: skip shoot wait
+                    rospy.logwarn("[TASK] Dry-run, skip shoot: %s", name)
+                    shoot_ok = True
+                elif target_type == 'circular':
                     global should_attack_circular
                     should_attack_circular = True
                     shoot_ok = self._wait_for_shoot('circular',
@@ -423,21 +458,24 @@ class CompetitionControl:
                 else:
                     shoot_ok = False
                 if shoot_ok:
-                    rospy.loginfo("Task done: %s", name)
+                    rospy.loginfo("[TASK] Done: %s", name)
                 else:
-                    rospy.logwarn("Shoot timeout: %s", name)
+                    rospy.logwarn("[TASK] Shoot failed: %s", name)
             else:
-                rospy.logwarn("Not in task zone: %s, skip", name)
+                rospy.logwarn("[TASK] Not in zone: %s robot=(%.3f,%.3f)",
+                              name, self.robot_x, self.robot_y)
             self.current_point_index += 1
 
         elif ptype == 'end':
-            self.goto(x, y, yaw_deg)
-            threshold = self.global_params.get('end_close_threshold', 0.15)
-            if self._close_enough(x, y, threshold):
-                rospy.loginfo("Near endpoint, sliding in")
-                self.cancel()
+            end_tol = 0.08
+            self.goto(x, y, yaw_deg, tol=end_tol)
+            self._update_robot_pose()
+            d = math.hypot(self.robot_x - x, self.robot_y - y)
+            if d < end_tol:
+                rospy.loginfo("[END] Near endpoint, sliding in (dist=%.3f)", d)
             else:
-                rospy.logwarn("Not near endpoint, slide anyway")
+                rospy.logwarn("[END] dist=%.3f > tol, slide anyway", d)
+            self.cancel()
             self._slide_into_end()
             self.state = 'FINISH'
 
