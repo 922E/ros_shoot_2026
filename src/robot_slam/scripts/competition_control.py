@@ -43,8 +43,8 @@ class CompetitionControl:
         # Load route config
         route_path = rospy.get_param('~route_config',
                                      self._default_route_path())
-        self.route_points, self.global_params, self.target_ids = \
-            self._load_route(route_path)
+        self.route_points, self.global_params, self.target_ids, \
+            self.start_pose = self._load_route(route_path)
         rospy.loginfo("Loaded route: %d points", len(self.route_points))
 
         self.state = 'WAIT_START'
@@ -110,7 +110,7 @@ class CompetitionControl:
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
         return data['route_points'], data.get('global', {}), \
-            data.get('target_ids', {})
+            data.get('target_ids', {}), data.get('start_pose', {})
 
     # ===================== Callbacks (match shoot_2025.py) =====================
 
@@ -336,8 +336,12 @@ class CompetitionControl:
 
     def _handle_wait_start(self):
         global target_id_rotating, target_id_moving
-        rospy.loginfo("STEP: Set '2D Pose Estimate' in RViz, align laser")
-        user_input = raw_input("Press Enter after setting initial pose: ")
+        # Auto-set initial pose from config
+        sp = self.start_pose
+        if sp:
+            self.set_pose(sp['x'], sp['y'], sp.get('yaw', 0.0))
+            rospy.loginfo("Initial pose set: (%.3f, %.3f)",
+                          sp['x'], sp['y'])
         # Apply YAML default IDs if voice is not running
         if target_id_rotating is None:
             target_id_rotating = self.target_ids.get('rotating', None)
@@ -345,6 +349,8 @@ class CompetitionControl:
             target_id_moving = self.target_ids.get('moving', None)
         rospy.loginfo("IDs - rotating:%s moving:%s",
                       target_id_rotating, target_id_moving)
+        rospy.loginfo("Place robot at start mark, press Enter")
+        raw_input("Press Enter to start competition: ")
         self.state = 'VOICE_RECV'
         rospy.loginfo("Competition started!")
 
