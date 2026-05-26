@@ -226,9 +226,10 @@ class CompetitionControl:
                 return False
             rate.sleep()
 
-    def _fine_adjust(self, x, y, tol=0.05, timeout=5.0):
-        """Low-speed fine positioning for task points"""
-        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f", x, y, tol)
+    def _fine_adjust_to_pose(self, x, y, yaw_deg=None,
+                              pos_tol=0.05, timeout=5.0):
+        """Fine adjust position for task points. Yaw handled by move_base DWA."""
+        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f", x, y, pos_tol)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
@@ -236,13 +237,13 @@ class CompetitionControl:
             dx = x - self.robot_x
             dy = y - self.robot_y
             d = math.hypot(dx, dy)
-            if d < tol:
-                self.pub.publish(Twist())  # stop
+            if d < pos_tol:
+                self.pub.publish(Twist())
                 rospy.loginfo("[FINE_ADJUST] OK dist=%.3f", d)
                 return True
             if (rospy.Time.now() - start).to_sec() > timeout:
                 self.pub.publish(Twist())
-                rospy.logwarn("[FINE_ADJUST] TIMEOUT dist=%.3f", d)
+                rospy.logwarn("[FINE_ADJUST] timeout dist=%.3f", d)
                 return False
             msg = Twist()
             msg.linear.x = max(-0.08, min(0.08, dx * 0.3))
@@ -421,25 +422,21 @@ class CompetitionControl:
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
-            threshold = self.global_params.get('relay_close_threshold', 0.12)
-            if self._close_enough(x, y, threshold):
-                rospy.loginfo("[RELAY] Already at: %s", name)
-            else:
-                self.goto(x, y, yaw_deg, timeout=30.0, tol=threshold)
-                self._update_robot_pose()
-                if not self._close_enough(x, y, threshold):
-                    rospy.logwarn("[RELAY] Skip: %s", name)
+            # Fast pass-through: wide tol, no fine adjust, no yaw, no stop
+            threshold = self.global_params.get('relay_close_threshold', 0.25)
+            if not self._close_enough(x, y, threshold):
+                self.goto(x, y, yaw_deg, timeout=20.0, tol=threshold)
             self.current_point_index += 1
 
         elif ptype == 'task':
             target_type = point.get('target_type', 'circular')
+            task_yaw = point.get('yaw', yaw_deg)
             # Step 1: rough nav with loose tol, short timeout
             rough_tol = 0.12
             self.goto(x, y, yaw_deg, timeout=15.0, tol=rough_tol)
-            self.cancel()  # stop move_base, let fine_adjust take over
-            # Step 2: fine adjust to precision
-            task_tol = 0.05
-            self._fine_adjust(x, y, tol=task_tol)
+            self.cancel()
+            # Step 2: fine adjust position + yaw
+            self._fine_adjust_to_pose(x, y, task_yaw)
             if self._in_task_zone(x, y):
                 rospy.loginfo("[TASK] In zone: %s", name)
                 if self.ser is None:

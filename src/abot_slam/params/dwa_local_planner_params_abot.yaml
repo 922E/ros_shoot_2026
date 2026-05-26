@@ -24,7 +24,7 @@ DWAPlannerROS:
   acc_lim_y: 1.0
 
 # Goal Tolerance Parameters
-  yaw_goal_tolerance: 3.14 
+  yaw_goal_tolerance: 0.3
   xy_goal_tolerance: 0.1  
   # latch_xy_goal_tolerance: false
 
