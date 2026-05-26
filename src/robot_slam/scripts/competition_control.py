@@ -226,9 +226,8 @@ class CompetitionControl:
                 return False
             rate.sleep()
 
-    def _fine_adjust_to_pose(self, x, y, yaw_deg=None,
-                              pos_tol=0.05, timeout=5.0):
-        """Fine adjust position for task points. Yaw handled by move_base DWA."""
+    def _fine_adjust_to_pose(self, x, y, pos_tol=0.05, timeout=8.0):
+        """Face target first, then approach. Prevents wrong-direction drift."""
         rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f", x, y, pos_tol)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
@@ -245,12 +244,37 @@ class CompetitionControl:
                 self.pub.publish(Twist())
                 rospy.logwarn("[FINE_ADJUST] timeout dist=%.3f", d)
                 return False
+            # Target direction in map frame
+            target_dir = math.atan2(dy, dx)
+            yaw_err = self._get_robot_yaw_error(target_dir)
             msg = Twist()
-            msg.linear.x = max(-0.08, min(0.08, dx * 0.3))
-            msg.linear.y = max(-0.08, min(0.08, dy * 0.3))
+            if abs(yaw_err) > 0.3:  # >17deg: rotate first
+                msg.angular.z = max(-0.5, min(0.5, yaw_err * 1.0))
+            else:
+                # Facing target: approach
+                msg.linear.x = max(-0.08, min(0.08, d * 0.3))
+                msg.angular.z = max(-0.3, min(0.3, yaw_err * 0.5))
             self.pub.publish(msg)
             rate.sleep()
         return False
+
+    def _get_robot_yaw_error(self, target_yaw):
+        """Get yaw error from current TF orientation to target_yaw"""
+        try:
+            self.tf_listener.waitForTransform('map', 'base_link',
+                                              rospy.Time(0), rospy.Duration(0.3))
+            _, rot = self.tf_listener.lookupTransform(
+                'map', 'base_link', rospy.Time(0))
+            import tf.transformations as tft
+            _, _, yaw = tft.euler_from_quaternion(rot)
+            err = target_yaw - yaw
+            while err > pi:
+                err -= 2 * pi
+            while err < -pi:
+                err += 2 * pi
+            return err
+        except Exception:
+            return 0.0
 
     def cancel(self):
         self.move_base.cancel_all_goals()
