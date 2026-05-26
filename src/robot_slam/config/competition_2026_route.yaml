@@ -1,7 +1,6 @@
 # competition_2026_route.yaml — 2026 赛季射击挑战赛导航路线配置
 # 坐标系: map (AMCL 校正后的绝对坐标)
 
-# 固定起点: 每次小车放在胶带标记处，代码自动发布此位姿到 /initialpose
 start_pose:
   x: 0.031
   y: -0.020
@@ -14,7 +13,7 @@ route_points:
     type: "task"
     target_type: "circular"
     x: 1.225
-    y: -0.514
+    y: -0.464
     yaw: 0.0
 
   # ── 途经点1 ──
@@ -31,7 +30,7 @@ route_points:
     type: "task"
     target_type: "rotating"
     x: 1.227
-    y: -1.636
+    y: -1.736
     yaw: 0.0
 
   # ── 途经点2 ──
@@ -51,9 +50,7 @@ route_points:
     y: -2.927
     yaw: 0.0
 
-  # ── 终点区域 (10分) ──
-  # 终点靠近围栏，costmap 不允许直接导航。
-  # 先到 pre_point（安全的可到达位置），再用 cmd_vel 低速滑入
+  # ── 终点 (10分)。costmap 阻挡，用前置点 + 滑入 ──
   - id: 6
     name: "终点"
     type: "end"

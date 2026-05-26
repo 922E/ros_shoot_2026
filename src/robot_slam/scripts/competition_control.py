@@ -433,15 +433,13 @@ class CompetitionControl:
 
         elif ptype == 'task':
             target_type = point.get('target_type', 'circular')
+            # Step 1: rough nav with loose tol, short timeout
+            rough_tol = 0.12
+            self.goto(x, y, yaw_deg, timeout=15.0, tol=rough_tol)
+            self.cancel()  # stop move_base, let fine_adjust take over
+            # Step 2: fine adjust to precision
             task_tol = 0.05
-            self.goto(x, y, yaw_deg,
-                      self.global_params.get('task_timeout', 60.0),
-                      tol=task_tol)
-            self._update_robot_pose()
-            d = math.hypot(self.robot_x - x, self.robot_y - y)
-            # Fine adjust if slightly off
-            if d > task_tol:
-                self._fine_adjust(x, y, tol=task_tol)
+            self._fine_adjust(x, y, tol=task_tol)
             if self._in_task_zone(x, y):
                 rospy.loginfo("[TASK] In zone: %s", name)
                 if self.ser is None:
