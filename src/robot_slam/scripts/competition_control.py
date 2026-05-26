@@ -226,14 +226,46 @@ class CompetitionControl:
                 return False
             rate.sleep()
 
+    def _rotate_to_yaw(self, yaw_deg, tol_deg=10.0, timeout=5.0):
+        """Rotate in place to target yaw. Blocks until done or timeout."""
+        target_yaw = yaw_deg / 180.0 * pi
+        rospy.loginfo("[ROTATE] to %.0fdeg from %.0fdeg",
+                      yaw_deg, self._get_robot_yaw() * 180.0 / pi)
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            err = self._get_robot_yaw_error(target_yaw)
+            if abs(err) < tol_deg / 180.0 * pi:
+                self.pub.publish(Twist())
+                rospy.loginfo("[ROTATE] OK robot_yaw=%.0fdeg", self._get_robot_yaw() * 180.0 / pi)
+                return True
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                self.pub.publish(Twist())
+                rospy.logwarn("[ROTATE] timeout err=%.0fdeg", err * 180.0 / pi)
+                return False
+            msg = Twist()
+            msg.angular.z = max(-0.5, min(0.5, err * 1.0))
+            self.pub.publish(msg)
+            rate.sleep()
+        return False
+
     def _fine_adjust_to_pose(self, x, y, target_yaw_deg=None,
                               pos_tol=0.05, yaw_tol=10.0, timeout=10.0):
-        """Fix position, then fix yaw if target_yaw_deg is given."""
+        """Fix position + yaw. Rotate first if yaw error is large."""
         target_yaw = target_yaw_deg / 180.0 * pi if target_yaw_deg is not None else None
         ryaw = self._get_robot_yaw()
         rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f,%.0fdeg) tol_xy=%.3f tol_yaw=%.0fdeg robot_yaw=%.0fdeg",
                       x, y, target_yaw_deg if target_yaw_deg is not None else -999,
                       pos_tol, yaw_tol, ryaw * 180.0 / pi)
+
+        # If yaw error > 30deg, rotate toward target yaw first
+        if target_yaw is not None:
+            err = self._get_robot_yaw_error(target_yaw)
+            if abs(err) > math.radians(30):
+                rospy.logwarn("[FINE_ADJUST] yaw off by %.0fdeg, rotate first",
+                              err * 180.0 / pi)
+                self._rotate_to_yaw(target_yaw_deg, tol_deg=15.0)
+
         start = rospy.Time.now()
         rate = rospy.Rate(10)
 
@@ -264,24 +296,8 @@ class CompetitionControl:
 
         # Step 2: fix yaw to target
         if target_yaw is not None:
-            start2 = rospy.Time.now()
-            while not rospy.is_shutdown():
-                yaw_err = self._get_robot_yaw_error(target_yaw)
-                if abs(yaw_err) < yaw_tol / 180.0 * pi:
-                    self.pub.publish(Twist())
-                    ryaw = self._get_robot_yaw()
-                    rospy.loginfo("[FINE_ADJUST] yaw OK err=%.0fdeg robot_yaw=%.0fdeg",
-                                  yaw_err * 180.0 / pi, ryaw * 180.0 / pi)
-                    return True
-                if (rospy.Time.now() - start2).to_sec() > 4.0:
-                    self.pub.publish(Twist())
-                    rospy.logwarn("[FINE_ADJUST] yaw timeout err=%.0fdeg",
-                                  yaw_err * 180.0 / pi)
-                    break
-                msg = Twist()
-                msg.angular.z = max(-0.5, min(0.5, yaw_err * 1.0))
-                self.pub.publish(msg)
-                rate.sleep()
+            if not self._rotate_to_yaw(target_yaw_deg, tol_deg=yaw_tol):
+                pass  # warn already logged
 
         return d < pos_tol if 'd' in dir() else False
 
@@ -488,10 +504,15 @@ class CompetitionControl:
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
-            # Fast pass-through: wide tol, no fine adjust, no yaw, no stop
+            # Fast pass-through with optional yaw correction
             threshold = self.global_params.get('relay_close_threshold', 0.25)
             if not self._close_enough(x, y, threshold):
                 self.goto(x, y, yaw_deg, timeout=20.0, tol=threshold)
+            # If relay has yaw, rotate in place before next point
+            relay_yaw = point.get('yaw')
+            if relay_yaw is not None and abs(self._get_robot_yaw_error(
+                    relay_yaw / 180.0 * pi if relay_yaw is not None else 0)) > 0.26:
+                self._rotate_to_yaw(relay_yaw)
             self.current_point_index += 1
 
         elif ptype == 'task':
