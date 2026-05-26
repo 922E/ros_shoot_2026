@@ -215,9 +215,9 @@ class CompetitionControl:
             self._update_robot_pose()
             d = math.hypot(self.robot_x - x, self.robot_y - y)
             if d < tol:
-                rospy.loginfo("[ARRIVE] %s dist=%.3f tol=%.3f robot=(%.3f,%.3f)",
-                              "OK" if d < tol else "FAR", d, tol,
-                              self.robot_x, self.robot_y)
+                ryaw = self._get_robot_yaw()
+                rospy.loginfo("[ARRIVE] OK dist=%.3f tol=%.3f robot=(%.3f,%.3f,%.0fdeg)",
+                              d, tol, self.robot_x, self.robot_y, ryaw * 180.0 / pi)
                 return True
             if (rospy.Time.now() - start).to_sec() > timeout:
                 rospy.logwarn("[ARRIVE] TIMEOUT dist=%.3f tol=%.3f robot=(%.3f,%.3f)",
@@ -228,7 +228,9 @@ class CompetitionControl:
 
     def _fine_adjust_to_pose(self, x, y, pos_tol=0.05, timeout=8.0):
         """Face target first, then approach. Prevents wrong-direction drift."""
-        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f", x, y, pos_tol)
+        ryaw = self._get_robot_yaw()
+        rospy.loginfo("[FINE_ADJUST] target=(%.3f,%.3f) tol=%.3f robot_yaw=%.0fdeg",
+                      x, y, pos_tol, ryaw * 180.0 / pi)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
@@ -258,8 +260,8 @@ class CompetitionControl:
             rate.sleep()
         return False
 
-    def _get_robot_yaw_error(self, target_yaw):
-        """Get yaw error from current TF orientation to target_yaw"""
+    def _get_robot_yaw(self):
+        """Get current robot yaw from TF. Returns radians, or 0 on failure."""
         try:
             self.tf_listener.waitForTransform('map', 'base_link',
                                               rospy.Time(0), rospy.Duration(0.3))
@@ -267,14 +269,29 @@ class CompetitionControl:
                 'map', 'base_link', rospy.Time(0))
             import tf.transformations as tft
             _, _, yaw = tft.euler_from_quaternion(rot)
-            err = target_yaw - yaw
-            while err > pi:
-                err -= 2 * pi
-            while err < -pi:
-                err += 2 * pi
-            return err
+            return yaw
         except Exception:
             return 0.0
+
+    def _get_robot_yaw_error(self, target_yaw):
+        """Get yaw error from current TF orientation to target_yaw"""
+        robot_yaw = self._get_robot_yaw()
+        err = target_yaw - robot_yaw
+        while err > pi:
+            err -= 2 * pi
+        while err < -pi:
+            err += 2 * pi
+        return err
+
+    def _log_pose(self, tag, name, tx, ty, tyaw_deg):
+        """Log target vs robot pose with yaw"""
+        ryaw = self._get_robot_yaw()
+        d = math.hypot(self.robot_x - tx, self.robot_y - ty)
+        yaw_err_deg = (tyaw_deg / 180.0 * pi - ryaw) * 180.0 / pi if tyaw_deg is not None else 0
+        rospy.loginfo("[%s] %s target=(%.3f,%.3f,%.0fdeg) robot=(%.3f,%.3f,%.0fdeg) dist=%.3f yaw_err=%.0fdeg",
+                      tag, name, tx, ty, tyaw_deg,
+                      self.robot_x, self.robot_y, ryaw * 180.0 / pi,
+                      d, yaw_err_deg)
 
     def cancel(self):
         self.move_base.cancel_all_goals()
@@ -455,14 +472,18 @@ class CompetitionControl:
         elif ptype == 'task':
             target_type = point.get('target_type', 'circular')
             task_yaw = point.get('yaw', yaw_deg)
+            ryaw = self._get_robot_yaw()
+            rospy.loginfo("[TASK_PRE] %s target=(%.3f,%.3f,%.0fdeg) robot=(%.3f,%.3f,%.0fdeg)",
+                          name, x, y, task_yaw,
+                          self.robot_x, self.robot_y, ryaw * 180.0 / pi)
             # Step 1: rough nav with loose tol, short timeout
             rough_tol = 0.12
             self.goto(x, y, yaw_deg, timeout=15.0, tol=rough_tol)
             self.cancel()
             # Step 2: fine adjust position + yaw
-            self._fine_adjust_to_pose(x, y, task_yaw)
+            self._fine_adjust_to_pose(x, y)
             if self._in_task_zone(x, y):
-                rospy.loginfo("[TASK] In zone: %s", name)
+                self._log_pose("TASK", name, x, y, task_yaw)
                 if self.ser is None:
                     # Dry-run: skip shoot wait
                     rospy.logwarn("[TASK] Dry-run, skip shoot: %s", name)
