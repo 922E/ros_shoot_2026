@@ -269,7 +269,7 @@ class CompetitionControl:
         start = rospy.Time.now()
         rate = rospy.Rate(10)
 
-        # Step 1: fix position
+        # Step 1: fix position. Lock yaw — abort xy if yaw drifts > 15deg
         while not rospy.is_shutdown():
             self._update_robot_pose()
             dx = x - self.robot_x
@@ -283,6 +283,13 @@ class CompetitionControl:
                 self.pub.publish(Twist())
                 rospy.logwarn("[FINE_ADJUST] xy timeout dist=%.3f", d)
                 break
+            # Abort xy if yaw has drifted from target
+            if target_yaw is not None:
+                yaw_drift = abs(self._get_robot_yaw_error(target_yaw)) * 180.0 / pi
+                if yaw_drift > 15.0:
+                    self.pub.publish(Twist())
+                    rospy.logwarn("[FINE_ADJUST] yaw drifted %.0fdeg, abort xy", yaw_drift)
+                    break
             target_dir = math.atan2(dy, dx)
             yaw_err = self._get_robot_yaw_error(target_dir)
             msg = Twist()
@@ -511,7 +518,7 @@ class CompetitionControl:
             # If relay has yaw, rotate in place before next point
             relay_yaw = point.get('yaw')
             if relay_yaw is not None and abs(self._get_robot_yaw_error(
-                    relay_yaw / 180.0 * pi if relay_yaw is not None else 0)) > 0.26:
+                    relay_yaw / 180.0 * pi)) > 0.26:
                 self._rotate_to_yaw(relay_yaw)
             self.current_point_index += 1
 
@@ -526,8 +533,17 @@ class CompetitionControl:
             rough_tol = 0.12
             self.goto(x, y, yaw_deg, timeout=15.0, tol=rough_tol)
             self.cancel()
-            # Step 2: fine adjust position + yaw
-            self._fine_adjust_to_pose(x, y, target_yaw_deg=task_yaw)
+            # Fast accept: if already close enough, skip fine_adjust
+            self._update_robot_pose()
+            d = math.hypot(self.robot_x - x, self.robot_y - y)
+            yaw_err = abs(self._get_robot_yaw_error(
+                task_yaw / 180.0 * pi)) * 180.0 / pi
+            if d < 0.12 and yaw_err < 15.0:
+                rospy.loginfo("[FAST_ACCEPT] dist=%.3f yaw_err=%.0fdeg, skip fine",
+                              d, yaw_err)
+            else:
+                # Step 2: fine adjust position + yaw
+                self._fine_adjust_to_pose(x, y, target_yaw_deg=task_yaw)
             if self._in_task_zone(x, y):
                 self._log_pose("TASK", name, x, y, task_yaw)
                 if self.ser is None:

@@ -24,14 +24,6 @@ route_points:
     y: -1.064
     yaw: 0.0
 
-  # ── shoot2_pre: 到这里后强制旋转到 yaw=0，再进入射击点2 ──
-  - id: 7
-    name: "shoot2_pre"
-    type: "relay"
-    x: 0.85
-    y: -1.70
-    yaw: 0.0
-
   # ── 射击点2: 旋转靶 (15分) ──
   - id: 3
     name: "射击点2-旋转靶"
@@ -41,7 +33,7 @@ route_points:
     y: -1.736
     yaw: 0.0
 
-  # ── 途经点2 (快速通过) ──
+  # ── 途经点2 (快速通过 + yaw校正) ──
   - id: 4
     name: "途经点2"
     type: "relay"
