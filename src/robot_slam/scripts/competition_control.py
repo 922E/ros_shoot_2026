@@ -36,13 +36,14 @@ FINE_ADJUST_YAW_DRIFT = 20.0  # abort fine_adjust_xy if yaw drifts beyond this (
 
 # Relay arrival: y-based pass-through + x safety corridor
 RELAY_Y_TOL = 0.08         # robot_y <= target_y + this → y_ok
-SAFE_X_MIN = 0.20          # safe corridor x lower bound
+SAFE_X_MIN = 0.28          # safe corridor x lower bound
 SAFE_X_MAX = 0.45          # safe corridor x upper bound
 RELAY_YAW_TOL = 25.0       # relay departure yaw tolerance (deg)
 RELAY_ROTATE_TIMEOUT = 1.5 # relay rotate timeout (s)
 
 # back_y_only: retreat in y direction only
 BACK_Y_TOL = 0.08          # robot_y <= target_y + this → arrive
+BACK_Y_TIMEOUT = 8.0       # goto timeout for back_y_only (s)
 
 # End slide
 END_ACCEPT_TOL = 0.08      # end slide early accept (m)
@@ -452,6 +453,29 @@ class CompetitionControl:
             rate.sleep()
         return False
 
+    def _cmd_vel_to_y(self, target_y, speed=-0.10, timeout=5.0):
+        """Drive robot in y direction with cmd_vel until robot_y <= target_y.
+        Uses map-frame y direction for holonomic robot facing yaw≈0."""
+        rospy.loginfo("[CMD_VEL_Y] driving to y<=%.3f from y=%.3f",
+                      target_y, self.robot_y)
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            self._update_robot_pose()
+            if self.robot_y <= target_y:
+                self.pub.publish(Twist())
+                rospy.loginfo("[CMD_VEL_Y] OK y=%.3f", self.robot_y)
+                return True
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                self.pub.publish(Twist())
+                rospy.logwarn("[CMD_VEL_Y] timeout y=%.3f", self.robot_y)
+                return False
+            msg = Twist()
+            msg.linear.y = speed
+            self.pub.publish(msg)
+            rate.sleep()
+        return False
+
     # ===================== Voice trigger =====================
 
     def _trigger_voice(self):
@@ -538,37 +562,33 @@ class CompetitionControl:
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'back_y_only':
-            # Retreat in y direction only — no x requirement, no rotation
-            goal = PoseStamped()
-            goal.header.frame_id = 'map'
-            goal.header.stamp = rospy.Time.now()
-            goal.pose.position.x = x
-            goal.pose.position.y = y
-            goal.pose.position.z = 0.0
-            q = self._quat_from_euler(0.0, 0.0, yaw_deg / 180.0 * pi)
-            goal.pose.orientation.x = q[0]
-            goal.pose.orientation.y = q[1]
-            goal.pose.orientation.z = q[2]
-            goal.pose.orientation.w = q[3]
-            self.goal_pub.publish(goal)
+            # Actively navigate to back_y_only, then verify y arrival
+            rospy.loginfo("[BACK_Y] goto (%.3f,%.3f)", x, y)
+            self.goto(x, y, yaw_deg, timeout=BACK_Y_TIMEOUT, tol=0.15)
+            self.cancel()
+            self._update_robot_pose()
 
-            start = rospy.Time.now()
-            rate = rospy.Rate(10)
-            while not rospy.is_shutdown():
+            y_ok = self.robot_y <= y + BACK_Y_TOL
+            if not y_ok:
+                # Retry once with goto
+                rospy.logwarn("[BACK_Y] y=%.3f not reached, retry goto", self.robot_y)
+                self.goto(x, y, yaw_deg, timeout=BACK_Y_TIMEOUT, tol=0.15)
+                self.cancel()
                 self._update_robot_pose()
-                if self.robot_y <= y + BACK_Y_TOL:
-                    self.cancel()
-                    self.pub.publish(Twist())
-                    rospy.loginfo("[BACK_Y] y=%.3f OK (target_y=%.3f)",
-                                  self.robot_y, y)
-                    break
-                if (rospy.Time.now() - start).to_sec() > 20.0:
-                    self.cancel()
-                    self.pub.publish(Twist())
-                    rospy.logwarn("[BACK_Y] timeout y=%.3f (target_y=%.3f)",
-                                  self.robot_y, y)
-                    break
-                rate.sleep()
+                y_ok = self.robot_y <= y + BACK_Y_TOL
+
+            if not y_ok:
+                # Fallback: cmd_vel drive to y line
+                rospy.logwarn("[BACK_Y] goto retry failed, cmd_vel fallback")
+                self._cmd_vel_to_y(y, speed=-0.10, timeout=5.0)
+                self._update_robot_pose()
+                y_ok = self.robot_y <= y + BACK_Y_TOL
+
+            if y_ok:
+                rospy.loginfo("[BACK_Y] OK y=%.3f (target=%.3f)", self.robot_y, y)
+            else:
+                rospy.logerr("[BACK_Y] ALL FAIL y=%.3f (target=%.3f), force continue",
+                             self.robot_y, y)
 
             self.current_point_index += 1
 
