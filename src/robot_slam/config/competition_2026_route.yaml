@@ -20,15 +20,15 @@ route_points:
   - id: 2
     name: "后退1"
     type: "back_y_only"
-    x: 1.195
-    y: -1.064
+    x: 0.250
+    y: -0.554
     yaw: 0.0
 
   # ── 途经安全点1 (退到安全 x 走廊) ──
   - id: 3
     name: "途经安全点1"
     type: "relay"
-    x: 0.350
+    x: 0.250
     y: -1.064
     yaw: 0.0
 
@@ -45,15 +45,15 @@ route_points:
   - id: 5
     name: "后退2"
     type: "back_y_only"
-    x: 1.207
-    y: -2.281
+    x: 0.250
+    y: -1.706
     yaw: 0.0
 
   # ── 途经安全点2 (退到安全 x 走廊) ──
   - id: 6
     name: "途经安全点2"
     type: "relay"
-    x: 0.350
+    x: 0.250
     y: -2.281
     yaw: 0.0
 
