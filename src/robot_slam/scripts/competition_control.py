@@ -27,10 +27,17 @@ Yaw_th1 = 0.1
 Min_y = -0.1
 Max_y = 0.1
 
-# Shooter task tolerances
+# Shooter task tolerances (fine)
 SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
-SHOOT_YAW_TOL = 15.0       # yaw tolerance (deg)
-SHOOT_TASK_DIST_TOL = 0.10 # TASK entry max distance (m)
+SHOOT_YAW_TOL = 15.0       # shoot-point yaw tolerance (deg)
+SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
+
+# Relay coarse tolerances
+RELAY_YAW_TOL = 25.0       # relay departure yaw tolerance (deg)
+RELAY_ROTATE_TIMEOUT = 1.5 # relay rotate timeout (s)
+
+# End slide
+END_ACCEPT_TOL = 0.08      # end slide early accept (m)
 
 # Global state flags (same as shoot_2025.py)
 point_msg = None
@@ -411,14 +418,14 @@ class CompetitionControl:
             dx = x - self.robot_x
             dy = y - self.robot_y
             d = math.hypot(dx, dy)
-            if d < 0.05:
+            if d <= END_ACCEPT_TOL:
                 self.pub.publish(Twist())
-                rospy.loginfo("[END] Slide complete, dist=%.3f", d)
+                rospy.loginfo("[END] Slide accept, dist=%.3f tol=%.3f", d, END_ACCEPT_TOL)
                 return True
             if (rospy.Time.now() - start).to_sec() > timeout:
                 self.pub.publish(Twist())
                 rospy.logwarn("[END] Slide timeout, dist=%.3f", d)
-                return False
+                return d <= END_ACCEPT_TOL
             msg = Twist()
             msg.linear.x = max(-speed, min(speed, dx * 0.5))
             msg.linear.y = max(-speed, min(speed, dy * 0.5))
@@ -477,7 +484,14 @@ class CompetitionControl:
     def _handle_voice_recv(self):
         global target_id_rotating, target_id_moving
         self._trigger_voice()
-        rospy.sleep(18)
+
+        # Skip 18s voice wait if IDs already known from YAML config
+        if target_id_rotating is not None and target_id_moving is not None:
+            rospy.loginfo("IDs already known (rotating=%s moving=%s), skip voice wait",
+                          target_id_rotating, target_id_moving)
+        else:
+            rospy.sleep(18)
+
         # Use YAML defaults if voice didn't update IDs
         if target_id_rotating is None:
             target_id_rotating = self.target_ids.get('rotating', None)
@@ -523,7 +537,8 @@ class CompetitionControl:
                 rospy.loginfo("[RELAY] departure heading to %s: %.0fdeg",
                               _safe(next_point.get('name', 'unknown')),
                               heading_deg)
-                self._rotate_to_yaw(heading_deg, tol_deg=10.0)
+                self._rotate_to_yaw(heading_deg, tol_deg=RELAY_YAW_TOL,
+                                     timeout=RELAY_ROTATE_TIMEOUT)
 
             self.current_point_index += 1
 
