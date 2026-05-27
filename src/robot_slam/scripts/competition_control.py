@@ -36,7 +36,7 @@ FINE_ADJUST_YAW_DRIFT = 20.0  # abort fine_adjust_xy if yaw drifts beyond this (
 
 # Relay arrival: y-based pass-through + x safety corridor
 RELAY_Y_TOL = 0.08         # robot_y <= target_y + this → y_ok
-SAFE_X_MIN = 0.28          # safe corridor x lower bound
+SAFE_X_MIN = 0.10          # safe corridor x lower bound
 SAFE_X_MAX = 0.45          # safe corridor x upper bound
 RELAY_YAW_TOL = 25.0       # relay departure yaw tolerance (deg)
 RELAY_ROTATE_TIMEOUT = 1.5 # relay rotate timeout (s)
