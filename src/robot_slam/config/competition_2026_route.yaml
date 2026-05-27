@@ -20,8 +20,8 @@ route_points:
   - id: 2
     name: "途经点1"
     type: "relay"
-    x: 0.207
-    y: -1.064
+    x: 0.107
+    y: -1.264
     yaw: 0.0
 
   # ── 射击点2: 旋转靶 (15分) ──
@@ -29,8 +29,8 @@ route_points:
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
-    x: 1.227
-    y: -1.736
+    x: 1.277
+    y: -1.686
     yaw: 0.0
 
   # ── 途经点2 (快速通过 + yaw校正) ──
@@ -46,21 +46,17 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
-    x: 1.176
-    y: -2.927
+    x: 1.276
+    y: -2.827
     yaw: 0.0
 
-  # ── 终点 (10分)。costmap 阻挡，先到前置点再低速滑入 ──
+  # ── 终点 (10分) ──
   - id: 6
     name: "终点"
     type: "end"
-    x: 0.005
-    y: -3.250
+    x: 0.025
+    y: -3.23
     yaw: 0.0
-    pre_point:
-      x: 0.40
-      y: -3.09
-      yaw: 0.0
 
 target_ids:
   rotating: 1
