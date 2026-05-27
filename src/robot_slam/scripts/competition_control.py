@@ -31,8 +31,12 @@ Max_y = 0.1
 SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_YAW_TOL = 15.0       # shoot-point yaw tolerance (deg)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
+SHOOT_YAW_SKIP_TOL = 15.0  # skip rotate_to_yaw if already within this (deg)
 
-# Relay coarse tolerances
+# Relay arrival: y-based pass-through + x safety corridor
+RELAY_Y_TOL = 0.08         # robot_y <= target_y + this → y_ok
+SAFE_X_MIN = 0.20          # safe corridor x lower bound
+SAFE_X_MAX = 0.45          # safe corridor x upper bound
 RELAY_YAW_TOL = 25.0       # relay departure yaw tolerance (deg)
 RELAY_ROTATE_TIMEOUT = 1.5 # relay rotate timeout (s)
 
@@ -519,15 +523,43 @@ class CompetitionControl:
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
-            # Navigate to relay waypoint
-            threshold = self.global_params.get('relay_close_threshold', 0.25)
-            if not self._close_enough(x, y, threshold):
-                self.goto(x, y, yaw_deg, timeout=20.0, tol=threshold)
+            # Send nav goal to relay point
+            goal = PoseStamped()
+            goal.header.frame_id = 'map'
+            goal.header.stamp = rospy.Time.now()
+            goal.pose.position.x = x
+            goal.pose.position.y = y
+            goal.pose.position.z = 0.0
+            q = self._quat_from_euler(0.0, 0.0, yaw_deg / 180.0 * pi)
+            goal.pose.orientation.x = q[0]
+            goal.pose.orientation.y = q[1]
+            goal.pose.orientation.z = q[2]
+            goal.pose.orientation.w = q[3]
+            self.goal_pub.publish(goal)
+
+            # Arrival: pass y-line AND stay in safe x corridor
+            start = rospy.Time.now()
+            rate = rospy.Rate(10)
+            while not rospy.is_shutdown():
+                self._update_robot_pose()
+                y_ok = self.robot_y <= y + RELAY_Y_TOL
+                x_safe = SAFE_X_MIN <= self.robot_x <= SAFE_X_MAX
+                if y_ok and x_safe:
+                    self.cancel()
+                    self.pub.publish(Twist())
+                    rospy.loginfo("[RELAY] pass y=%.3f(y_ok=%s) x=%.3f(x_safe=%s)",
+                                  self.robot_y, y_ok, self.robot_x, x_safe)
+                    break
+                if (rospy.Time.now() - start).to_sec() > 20.0:
+                    self.cancel()
+                    self.pub.publish(Twist())
+                    rospy.logwarn("[RELAY] timeout y=%.3f(y_ok=%s) x=%.3f(x_safe=%s)",
+                                  self.robot_y, y_ok, self.robot_x, x_safe)
+                    break
+                rate.sleep()
 
             # Stop, then rotate to dynamic departure heading toward next point
-            self.pub.publish(Twist())
             self._update_robot_pose()
-
             next_idx = self.current_point_index + 1
             if next_idx < len(self.route_points):
                 next_point = self.route_points[next_idx]
@@ -557,8 +589,16 @@ class CompetitionControl:
             # Step 2: fine adjust xy only (always, no fast accept)
             xy_ok = self._fine_adjust_xy(x, y)
 
-            # Step 3: rotate to target yaw
-            yaw_ok = self._rotate_to_yaw(task_yaw, tol_deg=SHOOT_YAW_TOL)
+            # Step 3: rotate to target yaw (skip if already within SKIP_TOL)
+            self._update_robot_pose()
+            yaw_err_after_xy = abs(self._get_robot_yaw_error(
+                task_yaw / 180.0 * pi)) * 180.0 / pi
+            if yaw_err_after_xy <= SHOOT_YAW_SKIP_TOL:
+                rospy.loginfo("[TASK] yaw skip: %.0fdeg <= %.0fdeg",
+                              yaw_err_after_xy, SHOOT_YAW_SKIP_TOL)
+                yaw_ok = True
+            else:
+                yaw_ok = self._rotate_to_yaw(task_yaw, tol_deg=SHOOT_YAW_TOL)
 
             # Step 4: final check before TASK
             self._update_robot_pose()
