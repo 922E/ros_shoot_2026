@@ -32,6 +32,7 @@ SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_YAW_TOL = 15.0       # shoot-point yaw tolerance (deg)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
 SHOOT_YAW_SKIP_TOL = 15.0  # skip rotate_to_yaw if already within this (deg)
+FINE_ADJUST_YAW_DRIFT = 20.0  # abort fine_adjust_xy if yaw drifts beyond this (deg)
 
 # Relay arrival: y-based pass-through + x safety corridor
 RELAY_Y_TOL = 0.08         # robot_y <= target_y + this → y_ok
@@ -39,6 +40,9 @@ SAFE_X_MIN = 0.20          # safe corridor x lower bound
 SAFE_X_MAX = 0.45          # safe corridor x upper bound
 RELAY_YAW_TOL = 25.0       # relay departure yaw tolerance (deg)
 RELAY_ROTATE_TIMEOUT = 1.5 # relay rotate timeout (s)
+
+# back_y_only: retreat in y direction only
+BACK_Y_TOL = 0.08          # robot_y <= target_y + this → arrive
 
 # End slide
 END_ACCEPT_TOL = 0.08      # end slide early accept (m)
@@ -265,9 +269,10 @@ class CompetitionControl:
             rate.sleep()
         return False
 
-    def _fine_adjust_xy(self, x, y, pos_tol=None, timeout=10.0):
-        """Fix xy position only. No yaw handling. P-controller: rotate to face
-        target, then drive forward. Retry up to 3 times."""
+    def _fine_adjust_xy(self, x, y, pos_tol=None, target_yaw_deg=None,
+                         timeout=10.0):
+        """Fix xy position only. If target_yaw_deg is given, abort if yaw
+        drifts beyond FINE_ADJUST_YAW_DRIFT from target. Retry up to 3 times."""
         if pos_tol is None:
             pos_tol = SHOOT_XY_TOL
 
@@ -297,6 +302,16 @@ class CompetitionControl:
                     self.pub.publish(Twist())
                     rospy.logwarn("[FINE_ADJUST_XY] timeout dist=%.3f attempt=%d", d, attempt)
                     break
+
+                # Abort if yaw drifts too far from shoot target
+                if target_yaw_deg is not None:
+                    yaw_drift = abs(self._get_robot_yaw_error(
+                        target_yaw_deg / 180.0 * pi)) * 180.0 / pi
+                    if yaw_drift > FINE_ADJUST_YAW_DRIFT:
+                        self.pub.publish(Twist())
+                        rospy.logwarn("[FINE_ADJUST_XY] yaw drifted %.0fdeg > %.0fdeg, abort",
+                                      yaw_drift, FINE_ADJUST_YAW_DRIFT)
+                        return False
 
                 target_dir = math.atan2(dy, dx)
                 yaw_err = self._get_robot_yaw_error(target_dir)
@@ -522,7 +537,42 @@ class CompetitionControl:
                       self.current_point_index + 1, len(self.route_points),
                       name, x, y, self.robot_x, self.robot_y)
 
-        if ptype == 'relay':
+        if ptype == 'back_y_only':
+            # Retreat in y direction only — no x requirement, no rotation
+            goal = PoseStamped()
+            goal.header.frame_id = 'map'
+            goal.header.stamp = rospy.Time.now()
+            goal.pose.position.x = x
+            goal.pose.position.y = y
+            goal.pose.position.z = 0.0
+            q = self._quat_from_euler(0.0, 0.0, yaw_deg / 180.0 * pi)
+            goal.pose.orientation.x = q[0]
+            goal.pose.orientation.y = q[1]
+            goal.pose.orientation.z = q[2]
+            goal.pose.orientation.w = q[3]
+            self.goal_pub.publish(goal)
+
+            start = rospy.Time.now()
+            rate = rospy.Rate(10)
+            while not rospy.is_shutdown():
+                self._update_robot_pose()
+                if self.robot_y <= y + BACK_Y_TOL:
+                    self.cancel()
+                    self.pub.publish(Twist())
+                    rospy.loginfo("[BACK_Y] y=%.3f OK (target_y=%.3f)",
+                                  self.robot_y, y)
+                    break
+                if (rospy.Time.now() - start).to_sec() > 20.0:
+                    self.cancel()
+                    self.pub.publish(Twist())
+                    rospy.logwarn("[BACK_Y] timeout y=%.3f (target_y=%.3f)",
+                                  self.robot_y, y)
+                    break
+                rate.sleep()
+
+            self.current_point_index += 1
+
+        elif ptype == 'relay':
             # Send nav goal to relay point
             goal = PoseStamped()
             goal.header.frame_id = 'map'
@@ -586,19 +636,29 @@ class CompetitionControl:
             self.goto(x, y, yaw_deg, timeout=15.0, tol=0.12)
             self.cancel()
 
-            # Step 2: fine adjust xy only (always, no fast accept)
-            xy_ok = self._fine_adjust_xy(x, y)
-
-            # Step 3: rotate to target yaw (skip if already within SKIP_TOL)
+            # Step 2: pre-check — skip fine_adjust if already in zone with good yaw
             self._update_robot_pose()
-            yaw_err_after_xy = abs(self._get_robot_yaw_error(
+            d_pre = math.hypot(self.robot_x - x, self.robot_y - y)
+            yaw_err_pre = abs(self._get_robot_yaw_error(
                 task_yaw / 180.0 * pi)) * 180.0 / pi
-            if yaw_err_after_xy <= SHOOT_YAW_SKIP_TOL:
-                rospy.loginfo("[TASK] yaw skip: %.0fdeg <= %.0fdeg",
-                              yaw_err_after_xy, SHOOT_YAW_SKIP_TOL)
-                yaw_ok = True
+
+            if d_pre <= SHOOT_TASK_DIST_TOL and yaw_err_pre <= SHOOT_YAW_SKIP_TOL:
+                rospy.loginfo("[TASK] pos+yaw OK after goto (dist=%.3f yaw=%.0fdeg), skip fine",
+                              d_pre, yaw_err_pre)
             else:
-                yaw_ok = self._rotate_to_yaw(task_yaw, tol_deg=SHOOT_YAW_TOL)
+                # Step 2a: fine adjust xy with yaw drift protection
+                if d_pre > SHOOT_TASK_DIST_TOL:
+                    self._fine_adjust_xy(x, y, target_yaw_deg=task_yaw)
+
+                # Step 2b: rotate to target yaw (skip if already within SKIP_TOL)
+                self._update_robot_pose()
+                yaw_err_after_xy = abs(self._get_robot_yaw_error(
+                    task_yaw / 180.0 * pi)) * 180.0 / pi
+                if yaw_err_after_xy <= SHOOT_YAW_SKIP_TOL:
+                    rospy.loginfo("[TASK] yaw skip: %.0fdeg <= %.0fdeg",
+                                  yaw_err_after_xy, SHOOT_YAW_SKIP_TOL)
+                else:
+                    self._rotate_to_yaw(task_yaw, tol_deg=SHOOT_YAW_TOL)
 
             # Step 4: final check before TASK
             self._update_robot_pose()

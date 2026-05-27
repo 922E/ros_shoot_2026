@@ -16,16 +16,24 @@ route_points:
     y: -0.554
     yaw: 0.0
 
-  # ── 途经点1 (快速通过) ──
+  # ── 后退1: 只退 y 方向 ──
   - id: 2
-    name: "途经点1"
+    name: "后退1"
+    type: "back_y_only"
+    x: 1.195
+    y: -1.064
+    yaw: 0.0
+
+  # ── 途经安全点1 (退到安全 x 走廊) ──
+  - id: 3
+    name: "途经安全点1"
     type: "relay"
-    x: 0.16
+    x: 0.300
     y: -1.064
     yaw: 0.0
 
   # ── 射击点2: 旋转靶 (15分) ──
-  - id: 3
+  - id: 4
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
@@ -33,16 +41,24 @@ route_points:
     y: -1.706
     yaw: 0.0
 
-  # ── 途经点2 (快速通过 + yaw校正) ──
-  - id: 4
-    name: "途经点2"
+  # ── 后退2: 只退 y 方向 ──
+  - id: 5
+    name: "后退2"
+    type: "back_y_only"
+    x: 1.207
+    y: -2.281
+    yaw: 0.0
+
+  # ── 途经安全点2 (退到安全 x 走廊) ──
+  - id: 6
+    name: "途经安全点2"
     type: "relay"
-    x: 0.16
+    x: 0.300
     y: -2.281
     yaw: 0.0
 
   # ── 射击点3: 移动靶 (15分) ──
-  - id: 5
+  - id: 7
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
@@ -51,14 +67,14 @@ route_points:
     yaw: 0.0
 
   # ── 终点 (10分)。costmap 阻挡，先到前置点再低速滑入 ──
-  - id: 6
+  - id: 8
     name: "终点"
     type: "end"
     x: 0.005
     y: -3.250
     yaw: 0.0
     pre_point:
-      x: 0.400
+      x: 0.300
       y: -3.090
       yaw: 0.0
 
