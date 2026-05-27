@@ -27,6 +27,11 @@ Yaw_th1 = 0.1
 Min_y = -0.1
 Max_y = 0.1
 
+# Shooter task tolerances
+SHOOT_FAST_ACCEPT_DIST = 0.08
+SHOOT_YAW_TOL = 15.0  # degrees
+SHOOT_TASK_DIST_TOL = 0.10
+
 # Global state flags (same as shoot_2025.py)
 point_msg = None
 target_id_rotating = None
@@ -511,15 +516,26 @@ class CompetitionControl:
                       name, x, y, self.robot_x, self.robot_y)
 
         if ptype == 'relay':
-            # Fast pass-through with optional yaw correction
+            # Navigate to relay waypoint
             threshold = self.global_params.get('relay_close_threshold', 0.25)
             if not self._close_enough(x, y, threshold):
                 self.goto(x, y, yaw_deg, timeout=20.0, tol=threshold)
-            # If relay has yaw, rotate in place before next point
-            relay_yaw = point.get('yaw')
-            if relay_yaw is not None and abs(self._get_robot_yaw_error(
-                    relay_yaw / 180.0 * pi)) > 0.26:
-                self._rotate_to_yaw(relay_yaw)
+
+            # Stop, then rotate to dynamic departure heading toward next point
+            self.pub.publish(Twist())
+            self._update_robot_pose()
+
+            next_idx = self.current_point_index + 1
+            if next_idx < len(self.route_points):
+                next_point = self.route_points[next_idx]
+                nx, ny = next_point['x'], next_point['y']
+                heading_deg = math.atan2(ny - self.robot_y,
+                                          nx - self.robot_x) * 180.0 / pi
+                rospy.loginfo("[RELAY] departure heading to %s: %.0fdeg",
+                              _safe(next_point.get('name', 'unknown')),
+                              heading_deg)
+                self._rotate_to_yaw(heading_deg, tol_deg=10.0)
+
             self.current_point_index += 1
 
         elif ptype == 'task':
@@ -533,21 +549,46 @@ class CompetitionControl:
             rough_tol = 0.12
             self.goto(x, y, yaw_deg, timeout=15.0, tol=rough_tol)
             self.cancel()
-            # Fast accept: if already close enough, skip fine_adjust
+            # Fast accept: skip fine_adjust only if ALL conditions met
             self._update_robot_pose()
             d = math.hypot(self.robot_x - x, self.robot_y - y)
             yaw_err = abs(self._get_robot_yaw_error(
                 task_yaw / 180.0 * pi)) * 180.0 / pi
-            if d < 0.12 and yaw_err < 15.0:
-                rospy.loginfo("[FAST_ACCEPT] dist=%.3f yaw_err=%.0fdeg, skip fine",
-                              d, yaw_err)
+            in_zone = self._in_task_zone(x, y)
+            if d <= SHOOT_FAST_ACCEPT_DIST and yaw_err <= SHOOT_YAW_TOL and in_zone:
+                rospy.loginfo("[FAST_ACCEPT] dist=%.3f yaw_err=%.0fdeg in_zone=%s, skip fine",
+                              d, yaw_err, in_zone)
             else:
+                if not in_zone:
+                    rospy.loginfo("[FAST_ACCEPT] REJECT dist=%.3f yaw_err=%.0fdeg in_zone=%s",
+                                  d, yaw_err, in_zone)
                 # Step 2: fine adjust position + yaw
                 self._fine_adjust_to_pose(x, y, target_yaw_deg=task_yaw)
-            if self._in_task_zone(x, y):
+            # Re-check pose and yaw before entering TASK
+            self._update_robot_pose()
+            d_final = math.hypot(self.robot_x - x, self.robot_y - y)
+            yaw_err_final = abs(self._get_robot_yaw_error(
+                task_yaw / 180.0 * pi)) * 180.0 / pi
+            in_zone = self._in_task_zone(x, y)
+
+            ok = in_zone and d_final <= SHOOT_TASK_DIST_TOL and yaw_err_final <= SHOOT_YAW_TOL
+
+            # If only yaw is off, try one rotation fix before giving up
+            if not ok and in_zone and d_final <= SHOOT_TASK_DIST_TOL and yaw_err_final > SHOOT_YAW_TOL:
+                rospy.logwarn("[TASK] yaw off by %.0fdeg, attempting fix rotation", yaw_err_final)
+                self._rotate_to_yaw(task_yaw, tol_deg=SHOOT_YAW_TOL)
+                self._update_robot_pose()
+                yaw_err_final = abs(self._get_robot_yaw_error(
+                    task_yaw / 180.0 * pi)) * 180.0 / pi
+                ok = yaw_err_final <= SHOOT_YAW_TOL
+                if ok:
+                    rospy.loginfo("[TASK] yaw fixed after retry: %.0fdeg", yaw_err_final)
+                else:
+                    rospy.logerr("[TASK] yaw fix failed: %.0fdeg", yaw_err_final)
+
+            if ok:
                 self._log_pose("TASK", name, x, y, task_yaw)
                 if self.ser is None:
-                    # Dry-run: skip shoot wait
                     rospy.logwarn("[TASK] Dry-run, skip shoot: %s", name)
                     shoot_ok = True
                 elif target_type == 'circular':
@@ -572,8 +613,9 @@ class CompetitionControl:
                 else:
                     rospy.logwarn("[TASK] Shoot failed: %s", name)
             else:
-                rospy.logwarn("[TASK] Not in zone: %s robot=(%.3f,%.3f)",
-                              name, self.robot_x, self.robot_y)
+                rospy.logerr("[TASK] FAIL %s: dist=%.3f(tol=%.3f) yaw_err=%.0fdeg(tol=%.0fdeg) in_zone=%s",
+                              name, d_final, SHOOT_TASK_DIST_TOL,
+                              yaw_err_final, SHOOT_YAW_TOL, in_zone)
             self.current_point_index += 1
 
         elif ptype == 'end':
