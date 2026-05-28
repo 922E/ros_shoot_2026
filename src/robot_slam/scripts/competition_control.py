@@ -41,9 +41,9 @@ RELAY_YAW_HARD_LIMIT = 45.0  # do not enter next segment above this error
 RELAY_ROTATE_TIMEOUT = 5.0 # enough for a large heading correction (s)
 ROTATE_RETRY_LIMIT = 1     # one bounded attempt; hard limit decides continue/stop
 ROTATE_CMD_SIGN = 1.0      # auto-flipped if yaw error grows during rotation
-RELAY_DRIVE_TIMEOUT = 16.0 # cmd_vel corridor traversal timeout (s)
-RELAY_MAX_VX = 0.08        # map x correction speed while crossing corridor
-RELAY_MAX_VY = 0.16        # map y traversal speed through narrow corridor
+RELAY_DRIVE_TIMEOUT = 10.0 # cmd_vel corridor traversal timeout (s)
+RELAY_MAX_VX = 0.10        # map x correction speed while crossing corridor
+RELAY_MAX_VY = 0.24        # map y traversal speed through narrow corridor
 RELAY_MAX_WZ = 0.18        # weak yaw hold, avoid in-corridor large turns
 
 # back_y_only: retreat to safe x corridor while keeping y near task line
@@ -53,9 +53,15 @@ BACK_Y_TOL = 0.08          # keep y close to target during back point
 BACK_Y_TIMEOUT = 8.0       # goto timeout for back_y_only (s)
 BACK_YAW_TOL = 20.0        # coarse yaw alignment at helper points (deg)
 BACK_ROTATE_TIMEOUT = 3.0  # keep helper-point alignment bounded (s)
+BACK_PUSH_TOL = 0.06       # cmd_vel helper correction target tolerance (m)
+BACK_PUSH_TIMEOUT = 2.0    # short push, cheaper than another move_base retry
 
 # End slide
 END_ACCEPT_TOL = 0.08      # end slide early accept (m)
+END_PRE_TIMEOUT = 12.0     # don't wait 60s for a tight pre-point
+END_PRE_SPEED = 0.14       # cmd_vel fallback speed to pre-point
+END_SLIDE_SPEED = 0.12     # final slide speed into 40x40cm end zone
+END_SLIDE_TIMEOUT = 10.0
 
 # Global state flags (same as shoot_2025.py)
 point_msg = None
@@ -480,9 +486,13 @@ class CompetitionControl:
 
     # ===================== Endpoint slide-in =====================
 
-    def _slide_to_point(self, x, y, speed=0.08, timeout=6.0):
-        """Slide toward target with low-speed cmd_vel, bypassing costmap"""
-        rospy.loginfo("[END] Sliding to (%.3f,%.3f) speed=%.3f", x, y, speed)
+    def _slide_to_point(self, x, y, speed=0.08, timeout=6.0, tol=None,
+                        tag="END"):
+        """Slide toward target with low-speed cmd_vel, bypassing costmap."""
+        if tol is None:
+            tol = END_ACCEPT_TOL
+        rospy.loginfo("[%s] Sliding to (%.3f,%.3f) speed=%.3f",
+                      tag, x, y, speed)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
@@ -490,17 +500,22 @@ class CompetitionControl:
             dx = x - self.robot_x
             dy = y - self.robot_y
             d = math.hypot(dx, dy)
-            if d <= END_ACCEPT_TOL:
+            if d <= tol:
                 self.pub.publish(Twist())
-                rospy.loginfo("[END] Slide accept, dist=%.3f tol=%.3f", d, END_ACCEPT_TOL)
+                rospy.loginfo("[%s] Slide accept, dist=%.3f tol=%.3f", tag, d, tol)
                 return True
             if (rospy.Time.now() - start).to_sec() > timeout:
                 self.pub.publish(Twist())
-                rospy.logwarn("[END] Slide timeout, dist=%.3f", d)
-                return d <= END_ACCEPT_TOL
+                rospy.logwarn("[%s] Slide timeout, dist=%.3f", tag, d)
+                return d <= tol
+            yaw = self._get_robot_yaw()
+            cos_yaw = math.cos(yaw)
+            sin_yaw = math.sin(yaw)
+            vx_map = max(-speed, min(speed, dx * 0.8))
+            vy_map = max(-speed, min(speed, dy * 0.8))
             msg = Twist()
-            msg.linear.x = max(-speed, min(speed, dx * 0.5))
-            msg.linear.y = max(-speed, min(speed, dy * 0.5))
+            msg.linear.x = cos_yaw * vx_map + sin_yaw * vy_map
+            msg.linear.y = -sin_yaw * vx_map + cos_yaw * vy_map
             self.pub.publish(msg)
             rate.sleep()
         return False
@@ -560,8 +575,8 @@ class CompetitionControl:
             yaw = self._get_robot_yaw()
             yaw_err = self._get_robot_yaw_error(target_yaw)
 
-            vx_map = max(-RELAY_MAX_VX, min(RELAY_MAX_VX, dx * 0.7))
-            vy_map = max(-RELAY_MAX_VY, min(RELAY_MAX_VY, dy * 1.0))
+            vx_map = max(-RELAY_MAX_VX, min(RELAY_MAX_VX, dx * 1.0))
+            vy_map = max(-RELAY_MAX_VY, min(RELAY_MAX_VY, dy * 1.6))
             cos_yaw = math.cos(yaw)
             sin_yaw = math.sin(yaw)
 
@@ -680,6 +695,14 @@ class CompetitionControl:
             if back_ok:
                 rospy.loginfo("[BACK_Y] OK x=%.3f y=%.3f target_y=%.3f",
                               self.robot_x, self.robot_y, y)
+                d_back = math.hypot(self.robot_x - x, self.robot_y - y)
+                if d_back > BACK_PUSH_TOL:
+                    rospy.loginfo("[BACK_Y] short cmd push dist=%.3f", d_back)
+                    self._slide_to_point(x, y, speed=RELAY_MAX_VX,
+                                         timeout=BACK_PUSH_TIMEOUT,
+                                         tol=BACK_PUSH_TOL,
+                                         tag="BACK_PUSH")
+                    self._update_robot_pose()
                 self._stop_motion()
                 yaw_ok = self._rotate_to_yaw(
                     yaw_deg, tol_deg=BACK_YAW_TOL,
@@ -805,14 +828,25 @@ class CompetitionControl:
             # Navigate to pre-point (safe distance from wall), then slide in
             pre = point.get('pre_point', None)
             if pre:
-                self.goto(pre['x'], pre['y'], pre.get('yaw', yaw_deg),
-                          timeout=60.0, tol=0.12)
+                pre_ok = self.goto(pre['x'], pre['y'], pre.get('yaw', yaw_deg),
+                                   timeout=END_PRE_TIMEOUT, tol=0.12)
+                self.cancel()
                 self._update_robot_pose()
-                rospy.loginfo("[END] Pre-point reached, now sliding to endpoint")
+                if not pre_ok:
+                    rospy.logwarn("[END] pre-point move_base timeout, cmd_vel fallback")
+                    self._slide_to_point(pre['x'], pre['y'],
+                                         speed=END_PRE_SPEED,
+                                         timeout=END_SLIDE_TIMEOUT,
+                                         tol=0.12,
+                                         tag="END_PRE")
+                rospy.loginfo("[END] Pre-point handled, now sliding to endpoint")
             else:
                 rospy.loginfo("[END] No pre-point, sliding from current position")
             self.cancel()
-            self._slide_to_point(x, y)
+            self._slide_to_point(x, y, speed=END_SLIDE_SPEED,
+                                 timeout=END_SLIDE_TIMEOUT,
+                                 tol=END_ACCEPT_TOL,
+                                 tag="END")
             self.state = 'FINISH'
 
     def _handle_finish(self):
