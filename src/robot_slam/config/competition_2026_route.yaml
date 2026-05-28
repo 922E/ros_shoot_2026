@@ -20,15 +20,15 @@ route_points:
   - id: 2
     name: "后退1"
     type: "back_y_only"
-    x: 0.300
-    y: -0.554
+    x: 0.200
+    y: -0.654
     yaw: 0.0
 
   # ── 途经安全点1 (退到安全 x 走廊) ──
   - id: 3
     name: "途经安全点1"
     type: "relay"
-    x: 0.300
+    x: 0.200
     y: -1.564
     yaw: 0.0
 
@@ -54,7 +54,7 @@ route_points:
     name: "途经安全点2"
     type: "relay"
     x: 0.300
-    y: -2.81
+    y: -2.71
     yaw: 0.0
 
   # ── 射击点3: 移动靶 (15分) ──

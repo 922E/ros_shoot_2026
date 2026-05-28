@@ -31,21 +31,23 @@ Max_y = 0.1
 SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
 
-# Relay arrival: near target y-line + x safety corridor
+# Relay arrival: near target y-line + target-centered x corridor
 RELAY_Y_TOL = 0.08         # abs(robot_y - target_y) <= this → y_ok
-SAFE_X_MIN = 0.25          # safe corridor x lower bound
-SAFE_X_MAX = 0.42          # safe corridor x upper bound
+RELAY_X_TOL = 0.14         # abs(robot_x - target_x) <= this → x_ok
+SAFE_X_MIN = 0.15          # hard field safety lower bound
+SAFE_X_MAX = 0.45          # hard field safety upper bound
 RELAY_YAW_TOL = 20.0       # preferred relay departure yaw tolerance (deg)
 RELAY_YAW_HARD_LIMIT = 45.0  # do not enter next segment above this error
 RELAY_ROTATE_TIMEOUT = 5.0 # enough for a large heading correction (s)
 ROTATE_RETRY_LIMIT = 1     # one bounded attempt; hard limit decides continue/stop
 ROTATE_CMD_SIGN = 1.0      # auto-flipped if yaw error grows during rotation
-RELAY_DRIVE_TIMEOUT = 12.0 # cmd_vel corridor traversal timeout (s)
-RELAY_MAX_VX = 0.06        # map x correction speed while crossing corridor
-RELAY_MAX_VY = 0.10        # map y traversal speed through narrow corridor
+RELAY_DRIVE_TIMEOUT = 16.0 # cmd_vel corridor traversal timeout (s)
+RELAY_MAX_VX = 0.08        # map x correction speed while crossing corridor
+RELAY_MAX_VY = 0.16        # map y traversal speed through narrow corridor
 RELAY_MAX_WZ = 0.18        # weak yaw hold, avoid in-corridor large turns
 
 # back_y_only: retreat to safe x corridor while keeping y near task line
+BACK_X_TOL = 0.16          # helper point x tolerance around configured x
 BACK_NAV_TOL = 0.08        # back point arrival tolerance (m)
 BACK_Y_TOL = 0.08          # keep y close to target during back point
 BACK_Y_TIMEOUT = 8.0       # goto timeout for back_y_only (s)
@@ -429,18 +431,20 @@ class CompetitionControl:
     def _close_enough(self, x, y, threshold):
         return math.hypot(self.robot_x - x, self.robot_y - y) < threshold
 
-    def _x_safe(self):
+    def _x_hard_safe(self):
         return SAFE_X_MIN <= self.robot_x <= SAFE_X_MAX
 
-    def _back_arrived(self, target_y):
-        x_safe = self._x_safe()
+    def _back_arrived(self, target_x, target_y):
+        x_safe = self._x_hard_safe()
+        x_ok = abs(self.robot_x - target_x) <= BACK_X_TOL
         y_ok = abs(self.robot_y - target_y) <= BACK_Y_TOL
-        return x_safe, y_ok, x_safe and y_ok
+        return x_safe and x_ok, y_ok, x_safe and x_ok and y_ok
 
-    def _relay_arrived(self, target_y):
-        x_safe = self._x_safe()
+    def _relay_arrived(self, target_x, target_y):
+        x_safe = self._x_hard_safe()
+        x_ok = abs(self.robot_x - target_x) <= RELAY_X_TOL
         y_ok = abs(self.robot_y - target_y) <= RELAY_Y_TOL
-        return x_safe, y_ok, x_safe and y_ok
+        return x_safe and x_ok, y_ok, x_safe and x_ok and y_ok
 
     def _in_task_zone(self, x, y):
         """Check if robot is within TASK entry distance"""
@@ -539,7 +543,7 @@ class CompetitionControl:
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
             self._update_robot_pose()
-            x_safe, y_ok, relay_ok = self._relay_arrived(target_y)
+            x_safe, y_ok, relay_ok = self._relay_arrived(target_x, target_y)
             if relay_ok:
                 self.pub.publish(Twist())
                 rospy.loginfo("[RELAY_DRIVE] OK x=%.3f y=%.3f",
@@ -556,8 +560,8 @@ class CompetitionControl:
             yaw = self._get_robot_yaw()
             yaw_err = self._get_robot_yaw_error(target_yaw)
 
-            vx_map = max(-RELAY_MAX_VX, min(RELAY_MAX_VX, dx * 0.5))
-            vy_map = max(-RELAY_MAX_VY, min(RELAY_MAX_VY, dy * 0.6))
+            vx_map = max(-RELAY_MAX_VX, min(RELAY_MAX_VX, dx * 0.7))
+            vy_map = max(-RELAY_MAX_VY, min(RELAY_MAX_VY, dy * 1.0))
             cos_yaw = math.cos(yaw)
             sin_yaw = math.sin(yaw)
 
@@ -665,7 +669,7 @@ class CompetitionControl:
                           tol=BACK_NAV_TOL)
                 self.cancel()
                 self._update_robot_pose()
-                x_safe, y_ok, back_ok = self._back_arrived(y)
+                x_safe, y_ok, back_ok = self._back_arrived(x, y)
                 rospy.loginfo("[BACK_Y] check attempt=%d x=%.3f(x_safe=%s) y=%.3f(y_ok=%s)",
                               attempt + 1, self.robot_x, x_safe,
                               self.robot_y, y_ok)
@@ -729,7 +733,7 @@ class CompetitionControl:
                         self.state = 'FINISH'
                         return
                 self._update_robot_pose()
-                x_safe, y_ok, relay_ok = self._relay_arrived(y)
+                x_safe, y_ok, relay_ok = self._relay_arrived(x, y)
                 if not relay_ok:
                     rospy.logerr("[RELAY] drift after rotate x=%.3f(x_safe=%s) y=%.3f(y_ok=%s)",
                                  self.robot_x, x_safe, self.robot_y, y_ok)
