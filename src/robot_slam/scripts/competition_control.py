@@ -32,18 +32,22 @@ SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
 FINE_ADJUST_YAW_DRIFT = 20.0  # abort fine_adjust_xy if yaw drifts beyond this (deg)
 
-# Relay arrival: y-based pass-through + x safety corridor
-RELAY_Y_TOL = 0.08         # robot_y <= target_y + this → y_ok
+# Relay arrival: near target y-line + x safety corridor
+RELAY_Y_TOL = 0.08         # abs(robot_y - target_y) <= this → y_ok
 SAFE_X_MIN = 0.28          # safe corridor x lower bound
 SAFE_X_MAX = 0.45          # safe corridor x upper bound
-RELAY_YAW_TOL = 12.0       # relay departure yaw tolerance (deg)
-RELAY_ROTATE_TIMEOUT = 1.5 # relay rotate timeout (s)
-ROTATE_RETRY_LIMIT = 2     # retry relay rotation before entering narrow gap
+RELAY_YAW_TOL = 20.0       # preferred relay departure yaw tolerance (deg)
+RELAY_YAW_HARD_LIMIT = 45.0  # do not enter next segment above this error
+RELAY_ROTATE_TIMEOUT = 5.0 # enough for a large heading correction (s)
+ROTATE_RETRY_LIMIT = 1     # one bounded attempt; hard limit decides continue/stop
+ROTATE_CMD_SIGN = 1.0      # auto-flipped if yaw error grows during rotation
 
 # back_y_only: retreat to safe x corridor while keeping y near task line
 BACK_NAV_TOL = 0.08        # back point arrival tolerance (m)
 BACK_Y_TOL = 0.08          # keep y close to target during back point
 BACK_Y_TIMEOUT = 8.0       # goto timeout for back_y_only (s)
+BACK_YAW_TOL = 20.0        # coarse yaw alignment at helper points (deg)
+BACK_ROTATE_TIMEOUT = 3.0  # keep helper-point alignment bounded (s)
 
 # End slide
 END_ACCEPT_TOL = 0.08      # end slide early accept (m)
@@ -253,9 +257,15 @@ class CompetitionControl:
         rospy.loginfo("[ROTATE] to %.0fdeg from %.0fdeg",
                       yaw_deg, self._get_robot_yaw() * 180.0 / pi)
         start = rospy.Time.now()
+        cmd_sign = ROTATE_CMD_SIGN
+        initial_abs_err = None
+        sign_checked = False
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
             err = self._get_robot_yaw_error(target_yaw)
+            abs_err = abs(err)
+            if initial_abs_err is None:
+                initial_abs_err = abs_err
             if abs(err) < tol_deg / 180.0 * pi:
                 self.pub.publish(Twist())
                 rospy.loginfo("[ROTATE] OK robot_yaw=%.0fdeg", self._get_robot_yaw() * 180.0 / pi)
@@ -264,8 +274,14 @@ class CompetitionControl:
                 self.pub.publish(Twist())
                 rospy.logwarn("[ROTATE] timeout err=%.0fdeg", err * 180.0 / pi)
                 return False
+            if (not sign_checked and
+                    (rospy.Time.now() - start).to_sec() > 0.7):
+                sign_checked = True
+                if abs_err > initial_abs_err + 0.15:
+                    cmd_sign *= -1.0
+                    rospy.logwarn("[ROTATE] yaw error growing, flip cmd sign")
             msg = Twist()
-            msg.angular.z = max(-0.5, min(0.5, err * 1.0))
+            msg.angular.z = max(-0.5, min(0.5, err * cmd_sign))
             self.pub.publish(msg)
             rate.sleep()
         return False
@@ -377,6 +393,15 @@ class CompetitionControl:
     def cancel(self):
         self.move_base.cancel_all_goals()
 
+    def _stop_motion(self, duration=0.3):
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            self.pub.publish(Twist())
+            if (rospy.Time.now() - start).to_sec() >= duration:
+                break
+            rate.sleep()
+
     def _quat_from_euler(self, roll, pitch, yaw):
         cy = math.cos(yaw * 0.5)
         sy = math.sin(yaw * 0.5)
@@ -416,7 +441,7 @@ class CompetitionControl:
 
     def _relay_arrived(self, target_y):
         x_safe = self._x_safe()
-        y_ok = self.robot_y <= target_y + RELAY_Y_TOL
+        y_ok = abs(self.robot_y - target_y) <= RELAY_Y_TOL
         return x_safe, y_ok, x_safe and y_ok
 
     def _in_task_zone(self, x, y):
@@ -607,6 +632,15 @@ class CompetitionControl:
             if back_ok:
                 rospy.loginfo("[BACK_Y] OK x=%.3f y=%.3f target_y=%.3f",
                               self.robot_x, self.robot_y, y)
+                self._stop_motion()
+                yaw_ok = self._rotate_to_yaw(
+                    yaw_deg, tol_deg=BACK_YAW_TOL,
+                    timeout=BACK_ROTATE_TIMEOUT)
+                if not yaw_ok:
+                    yaw_err = abs(self._get_robot_yaw_error(
+                        yaw_deg / 180.0 * pi)) * 180.0 / pi
+                    rospy.logwarn("[BACK_Y] yaw not fully aligned err=%.0fdeg, continue to relay",
+                                  yaw_err)
             else:
                 rospy.logerr("[BACK_Y] FAIL x=%.3f y=%.3f target_y=%.3f, stop before narrow gap",
                              self.robot_x, self.robot_y, y)
@@ -630,7 +664,7 @@ class CompetitionControl:
             goal.pose.orientation.w = q[3]
             self.goal_pub.publish(goal)
 
-            # Arrival: pass y-line AND stay in safe x corridor
+            # Arrival: stay near relay y-line AND inside safe x corridor
             start = rospy.Time.now()
             rate = rospy.Rate(10)
             relay_ok = False
@@ -657,28 +691,32 @@ class CompetitionControl:
                 self.state = 'FINISH'
                 return
 
-            # Stop, then rotate to dynamic departure heading toward next point
+            # Stop, then align to configured corridor heading. Do not derive
+            # this from the next task point; relay yaw should be stable and
+            # independent from small position overshoot.
             self._update_robot_pose()
             next_idx = self.current_point_index + 1
             if next_idx < len(self.route_points):
                 next_point = self.route_points[next_idx]
-                nx, ny = next_point['x'], next_point['y']
-                heading_deg = math.atan2(ny - self.robot_y,
-                                          nx - self.robot_x) * 180.0 / pi
-                rospy.loginfo("[RELAY] departure heading to %s: %.0fdeg",
+                heading_deg = yaw_deg
+                self._stop_motion()
+                rospy.loginfo("[RELAY] departure heading before %s: %.0fdeg",
                               _safe(next_point.get('name', 'unknown')),
                               heading_deg)
                 rotate_ok = self._rotate_to_yaw_with_retry(
                     heading_deg, tol_deg=RELAY_YAW_TOL,
                     timeout=RELAY_ROTATE_TIMEOUT,
                     retry_limit=ROTATE_RETRY_LIMIT)
-                if not rotate_ok:
-                    yaw_err = abs(self._get_robot_yaw_error(
-                        heading_deg / 180.0 * pi)) * 180.0 / pi
-                    rospy.logerr("[RELAY] yaw FAIL err=%.0fdeg, stop before narrow gap",
+                yaw_err = abs(self._get_robot_yaw_error(
+                    heading_deg / 180.0 * pi)) * 180.0 / pi
+                if not rotate_ok and yaw_err > RELAY_YAW_HARD_LIMIT:
+                    rospy.logerr("[RELAY] yaw FAIL err=%.0fdeg, stop before next segment",
                                  yaw_err)
                     self.state = 'FINISH'
                     return
+                if not rotate_ok:
+                    rospy.logwarn("[RELAY] yaw coarse only err=%.0fdeg, continue",
+                                  yaw_err)
                 self._update_robot_pose()
                 x_safe, y_ok, relay_ok = self._relay_arrived(y)
                 if not relay_ok:
