@@ -30,6 +30,10 @@ Max_y = 0.1
 # Shooter task tolerances (fine)
 SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
+TASK_NAV_TOL = 0.14        # rough move_base handoff; fine adjust owns final xy
+TASK_NAV_TIMEOUT = 10.0    # avoid waiting on the last few centimeters
+FINE_ADJUST_MAX_SPEED = 0.10
+FINE_ADJUST_GAIN = 0.65
 
 # Relay arrival: near target y-line + target-centered x corridor
 RELAY_Y_TOL = 0.08         # abs(robot_y - target_y) <= this → y_ok
@@ -353,8 +357,12 @@ class CompetitionControl:
                 robot_yaw = self._get_robot_yaw()
                 cos_yaw = math.cos(robot_yaw)
                 sin_yaw = math.sin(robot_yaw)
-                vx_map = max(-0.08, min(0.08, dx * 0.4))
-                vy_map = max(-0.08, min(0.08, dy * 0.4))
+                vx_map = max(-FINE_ADJUST_MAX_SPEED,
+                             min(FINE_ADJUST_MAX_SPEED,
+                                 dx * FINE_ADJUST_GAIN))
+                vy_map = max(-FINE_ADJUST_MAX_SPEED,
+                             min(FINE_ADJUST_MAX_SPEED,
+                                 dy * FINE_ADJUST_GAIN))
                 msg = Twist()
                 msg.linear.x = cos_yaw * vx_map + sin_yaw * vy_map
                 msg.linear.y = -sin_yaw * vx_map + cos_yaw * vy_map
@@ -777,7 +785,8 @@ class CompetitionControl:
                           self.robot_x, self.robot_y, ryaw * 180.0 / pi)
 
             # Step 1: rough nav
-            self.goto(x, y, yaw_deg, timeout=15.0, tol=0.12)
+            self.goto(x, y, yaw_deg, timeout=TASK_NAV_TIMEOUT,
+                      tol=TASK_NAV_TOL)
             self.cancel()
 
             # Step 2: pre-check. Navigation owns position only; the shooting

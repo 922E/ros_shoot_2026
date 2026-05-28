@@ -12,7 +12,7 @@ route_points:
     name: "射击点1-环形靶"
     type: "task"
     target_type: "circular"
-    x: 1.185
+    x: 1.165
     y: -0.554
     yaw: 0.0
 
@@ -38,7 +38,7 @@ route_points:
     type: "task"
     target_type: "rotating"
     x: 1.170
-    y: -1.706
+    y: -1.756
     yaw: 0.0
 
   # ── 后退2: 退回安全 x 走廊 ──
@@ -46,7 +46,7 @@ route_points:
     name: "后退2"
     type: "back_y_only"
     x: 0.200
-    y: -1.706
+    y: -2.06
     yaw: 0.0
 
   # ── 途经安全点2 (退到安全 x 走廊) ──
@@ -71,7 +71,7 @@ route_points:
     name: "终点"
     type: "end"
     x: 0.005
-    y: -3.250
+    y: -3.350
     yaw: 0.0
     pre_point:
       x: 0.200
