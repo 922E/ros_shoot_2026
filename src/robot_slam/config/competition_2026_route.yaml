@@ -45,7 +45,7 @@ route_points:
   - id: 5
     name: "后退2"
     type: "back_y_only"
-    x: 0.300
+    x: 0.200
     y: -1.706
     yaw: 0.0
 
@@ -53,7 +53,7 @@ route_points:
   - id: 6
     name: "途经安全点2"
     type: "relay"
-    x: 0.300
+    x: 0.200
     y: -2.71
     yaw: 0.0
 
@@ -74,7 +74,7 @@ route_points:
     y: -3.250
     yaw: 0.0
     pre_point:
-      x: 0.300
+      x: 0.200
       y: -3.090
       yaw: 0.0
 

@@ -48,20 +48,23 @@ RELAY_MAX_WZ = 0.18        # weak yaw hold, avoid in-corridor large turns
 
 # back_y_only: retreat to safe x corridor while keeping y near task line
 BACK_X_TOL = 0.16          # helper point x tolerance around configured x
-BACK_NAV_TOL = 0.08        # back point arrival tolerance (m)
+BACK_NAV_TOL = 0.12        # move_base only needs to reach cmd_vel handoff range
 BACK_Y_TOL = 0.08          # keep y close to target during back point
-BACK_Y_TIMEOUT = 8.0       # goto timeout for back_y_only (s)
+BACK_Y_TIMEOUT = 6.0       # bounded goto before short cmd_vel correction
 BACK_YAW_TOL = 20.0        # coarse yaw alignment at helper points (deg)
 BACK_ROTATE_TIMEOUT = 3.0  # keep helper-point alignment bounded (s)
 BACK_PUSH_TOL = 0.06       # cmd_vel helper correction target tolerance (m)
 BACK_PUSH_TIMEOUT = 2.0    # short push, cheaper than another move_base retry
+BACK_PUSH_SPEED = 0.14     # quick handoff correction after move_base
 
 # End slide
-END_ACCEPT_TOL = 0.08      # end slide early accept (m)
+END_ACCEPT_TOL = 0.04      # end zone needs a tighter final center lock
 END_PRE_TIMEOUT = 12.0     # don't wait 60s for a tight pre-point
 END_PRE_SPEED = 0.14       # cmd_vel fallback speed to pre-point
-END_SLIDE_SPEED = 0.12     # final slide speed into 40x40cm end zone
-END_SLIDE_TIMEOUT = 10.0
+END_SLIDE_SPEED = 0.14     # final slide speed into 40x40cm end zone
+END_SLIDE_TIMEOUT = 12.0
+END_RETRY_SPEED = 0.08     # slow final settle if the first slide times out
+END_RETRY_TIMEOUT = 3.0
 
 # Global state flags (same as shoot_2025.py)
 point_msg = None
@@ -399,7 +402,7 @@ class CompetitionControl:
     def cancel(self):
         self.move_base.cancel_all_goals()
 
-    def _stop_motion(self, duration=0.3):
+    def _stop_motion(self, duration=0.15):
         start = rospy.Time.now()
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
@@ -698,12 +701,12 @@ class CompetitionControl:
                 d_back = math.hypot(self.robot_x - x, self.robot_y - y)
                 if d_back > BACK_PUSH_TOL:
                     rospy.loginfo("[BACK_Y] short cmd push dist=%.3f", d_back)
-                    self._slide_to_point(x, y, speed=RELAY_MAX_VX,
+                    self._slide_to_point(x, y, speed=BACK_PUSH_SPEED,
                                          timeout=BACK_PUSH_TIMEOUT,
                                          tol=BACK_PUSH_TOL,
                                          tag="BACK_PUSH")
                     self._update_robot_pose()
-                self._stop_motion()
+                self._stop_motion(duration=0.1)
                 yaw_ok = self._rotate_to_yaw(
                     yaw_deg, tol_deg=BACK_YAW_TOL,
                     timeout=BACK_ROTATE_TIMEOUT)
@@ -724,7 +727,7 @@ class CompetitionControl:
             # Short corridor: use holonomic cmd_vel instead of move_base to
             # avoid extra heading changes inside a 65cm narrow segment.
             self.cancel()
-            self._stop_motion()
+            self._stop_motion(duration=0.1)
             relay_ok = self._drive_relay_corridor(x, y, yaw_deg)
             if not relay_ok:
                 rospy.logerr("[RELAY] FAIL x=%.3f y=%.3f target_y=%.3f, stop before next task",
@@ -843,10 +846,16 @@ class CompetitionControl:
             else:
                 rospy.loginfo("[END] No pre-point, sliding from current position")
             self.cancel()
-            self._slide_to_point(x, y, speed=END_SLIDE_SPEED,
-                                 timeout=END_SLIDE_TIMEOUT,
-                                 tol=END_ACCEPT_TOL,
-                                 tag="END")
+            end_ok = self._slide_to_point(x, y, speed=END_SLIDE_SPEED,
+                                          timeout=END_SLIDE_TIMEOUT,
+                                          tol=END_ACCEPT_TOL,
+                                          tag="END")
+            if not end_ok:
+                rospy.logwarn("[END] final center not locked, slow retry")
+                self._slide_to_point(x, y, speed=END_RETRY_SPEED,
+                                     timeout=END_RETRY_TIMEOUT,
+                                     tol=END_ACCEPT_TOL,
+                                     tag="END_RETRY")
             self.state = 'FINISH'
 
     def _handle_finish(self):
