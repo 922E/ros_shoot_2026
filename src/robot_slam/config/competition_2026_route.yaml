@@ -21,7 +21,7 @@ route_points:
     name: "后退1"
     type: "back_y_only"
     x: 0.200
-    y: -0.654
+    y: -0.554
     yaw: 0.0
 
   # ── 途经安全点1 (退到安全 x 走廊) ──
@@ -70,12 +70,12 @@ route_points:
   - id: 8
     name: "终点"
     type: "end"
-    x: 0.005
-    y: -3.350
+    x: 0.015
+    y: -3.450
     yaw: 0.0
     pre_point:
       x: 0.200
-      y: -3.090
+      y: -2.90
       yaw: 0.0
 
 target_ids:
