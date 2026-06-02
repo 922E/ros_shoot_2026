@@ -29,6 +29,9 @@ else
     exit 1
 fi
 
+export ROS_PACKAGE_PATH="/home/abot/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH"
+echo "  [OK] freeze_ros src 优先级已注入 ROS_PACKAGE_PATH"
+
 # 2. 验证包能找到
 echo ""
 echo "[2/5] 验证 package 路径..."
