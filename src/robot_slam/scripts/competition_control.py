@@ -21,12 +21,6 @@ def _safe(s):
         return s.encode('utf-8')
     return str(s)
 
-# Target thresholds (same as shoot_2025.py)
-Yaw_th = 0.1
-Yaw_th1 = 0.1
-Min_y = -0.1
-Max_y = 0.1
-
 # Shooter task tolerances (fine)
 SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
@@ -92,6 +86,10 @@ class CompetitionControl:
 
         self.state = 'WAIT_START'
         self.current_point_index = 0
+        self.circular_stable_frames = 0
+        self.rotating_stable_frames = 0
+        self.moving_stable_frames = 0
+        self.last_shoot_ok = None
 
         # Publishers (match shoot_2025.py)
         self.set_pose_pub = rospy.Publisher('/initialpose',
@@ -169,64 +167,178 @@ class CompetitionControl:
     def circular_target(self, data):
         """环形靶瞄准回调 (same as shoot_2025.py)"""
         global point_msg, should_attack_circular
+        target_id = 34
+        aim_center_x = 320.0
+        fire_threshold_px = 10.0
+        stable_frames_required = 1
+        kp_far = 0.02
+        kp_near = 0.012
+        near_threshold_px = 40.0
+        max_wz = 0.65
+        min_wz = 0.08
+
         if not should_attack_circular:
+            self.circular_stable_frames = 0
             return
         point_msg = data
-        offset_x = data.x - 320
-        if abs(offset_x) > 10 and data.z == 34:
+
+        if data.z != target_id:
+            self.circular_stable_frames = 0
+            self.pub.publish(Twist())
+            return
+
+        offset_x = data.x - aim_center_x
+        abs_offset_x = abs(offset_x)
+
+        if abs_offset_x > fire_threshold_px:
+            self.circular_stable_frames = 0
+            kp = kp_near if abs_offset_x <= near_threshold_px else kp_far
+            angular_z = -kp * offset_x
+            angular_z = max(-max_wz, min(max_wz, angular_z))
+            if abs(angular_z) < min_wz:
+                angular_z = min_wz if angular_z > 0 else -min_wz
             msg = Twist()
-            msg.angular.z = -0.02 * offset_x
+            msg.angular.z = angular_z
             self.pub.publish(msg)
-        elif abs(offset_x) <= 10 and data.z == 34:
-            if self._fire():
+
+        else:
+            self.circular_stable_frames += 1
+            self.pub.publish(Twist())
+            rospy.loginfo("Circular target stable frames: %d/%d",
+                          self.circular_stable_frames,
+                          stable_frames_required)
+            if self.circular_stable_frames < stable_frames_required:
+                return
+            fire_ok = self._fire()
+            self.last_shoot_ok = fire_ok
+            if fire_ok:
                 rospy.loginfo("Circular target pulse sent")
             else:
                 rospy.logerr("Circular target pulse failed")
+            self.circular_stable_frames = 0
             should_attack_circular = False
 
     def rotating_target(self, data):
         """旋转靶瞄准回调 (same as shoot_2025.py)"""
         global target_id_rotating, should_attack_rotating
-        global Yaw_th, Min_y, Max_y
+        x_threshold = 0.1
+        y_min = -0.1
+        y_max = 0.1
+        stable_frames_required = 2
+        kp_far = 1.0
+        kp_near = 0.65
+        near_threshold = 0.18
+        max_wz = 0.55
+        min_wz = 0.06
+        shoot_cooldown = 0.2
+
         if not should_attack_rotating:
+            self.rotating_stable_frames = 0
             return
+
+        found_target = False
         for marker in data.markers:
             if marker.id == target_id_rotating:
+                found_target = True
                 ax = marker.pose.pose.position.x
                 ay = marker.pose.pose.position.y
-                if abs(ax) >= Yaw_th:
+                abs_ax = abs(ax)
+                y_ok = y_min <= ay <= y_max
+
+                if abs_ax >= x_threshold:
+                    self.rotating_stable_frames = 0
+                    kp = kp_near if abs_ax <= near_threshold else kp_far
+                    angular_z = -kp * ax
+                    angular_z = max(-max_wz, min(max_wz, angular_z))
+                    if abs(angular_z) < min_wz:
+                        angular_z = min_wz if angular_z > 0 else -min_wz
                     msg = Twist()
-                    msg.angular.z = -1.0 * ax
+                    msg.angular.z = angular_z
                     self.pub.publish(msg)
-                elif Min_y <= ay <= Max_y:
+
+                elif y_ok:
+                    self.rotating_stable_frames += 1
+                    self.pub.publish(Twist())
+                    rospy.loginfo("Rotating target stable frames: %d/%d",
+                                  self.rotating_stable_frames,
+                                  stable_frames_required)
+                    if self.rotating_stable_frames < stable_frames_required:
+                        return
                     fire_ok = self._fire()
-                    rospy.sleep(2)
+                    self.last_shoot_ok = fire_ok
+                    rospy.sleep(shoot_cooldown)
                     if fire_ok:
                         rospy.loginfo("Rotating target pulse sent")
                     else:
                         rospy.logerr("Rotating target pulse failed")
+                    self.rotating_stable_frames = 0
                     should_attack_rotating = False
+
+                else:
+                    self.rotating_stable_frames = 0
+                    self.pub.publish(Twist())
+                return
+
+        if not found_target:
+            self.rotating_stable_frames = 0
+            self.pub.publish(Twist())
 
     def moving_target(self, data):
         """移动靶瞄准回调 (same as shoot_2025.py)"""
-        global target_id_moving, should_attack_moving, Yaw_th1
+        global target_id_moving, should_attack_moving
+        x_threshold = 0.1
+        stable_frames_required = 2
+        kp_far = 0.95
+        kp_near = 0.7
+        near_threshold = 0.18
+        max_wz = 0.6
+        min_wz = 0.08
+        shoot_cooldown = 0.1
+
         if not should_attack_moving:
+            self.moving_stable_frames = 0
             return
+
+        found_target = False
         for marker in data.markers:
             if marker.id == target_id_moving:
+                found_target = True
                 ax = marker.pose.pose.position.x
-                if abs(ax) >= Yaw_th1:
+                abs_ax = abs(ax)
+
+                if abs_ax >= x_threshold:
+                    self.moving_stable_frames = 0
+                    kp = kp_near if abs_ax <= near_threshold else kp_far
+                    angular_z = -kp * ax
+                    angular_z = max(-max_wz, min(max_wz, angular_z))
+                    if abs(angular_z) < min_wz:
+                        angular_z = min_wz if angular_z > 0 else -min_wz
                     msg = Twist()
-                    msg.angular.z = -0.95 * ax
+                    msg.angular.z = angular_z
                     self.pub.publish(msg)
+
                 else:
+                    self.moving_stable_frames += 1
+                    self.pub.publish(Twist())
+                    rospy.loginfo("Moving target stable frames: %d/%d",
+                                  self.moving_stable_frames,
+                                  stable_frames_required)
+                    if self.moving_stable_frames < stable_frames_required:
+                        return
                     fire_ok = self._fire()
-                    rospy.sleep(0.1)
+                    self.last_shoot_ok = fire_ok
+                    rospy.sleep(shoot_cooldown)
                     if fire_ok:
                         rospy.loginfo("Moving target pulse sent")
                     else:
                         rospy.logerr("Moving target pulse failed")
+                    self.moving_stable_frames = 0
                     should_attack_moving = False
+                return
+
+        if not found_target:
+            self.moving_stable_frames = 0
+            self.pub.publish(Twist())
 
     # ===================== Navigation =====================
 
@@ -512,14 +624,31 @@ class CompetitionControl:
             global should_attack_circular, should_attack_rotating
             global should_attack_moving
             if flag_name == 'circular' and not should_attack_circular:
-                return True
+                return self.last_shoot_ok is True
             if flag_name == 'rotating' and not should_attack_rotating:
-                return True
+                return self.last_shoot_ok is True
             if flag_name == 'moving' and not should_attack_moving:
-                return True
+                return self.last_shoot_ok is True
             if (rospy.Time.now() - start).to_sec() > timeout:
+                rospy.logwarn("Shooter aiming timeout: %s", flag_name)
+                self._reset_attack_state(flag_name)
                 return False
             rate.sleep()
+
+    def _reset_attack_state(self, flag_name):
+        """Disable one visual attack mode and stop residual rotation."""
+        global should_attack_circular, should_attack_rotating
+        global should_attack_moving
+        if flag_name == 'circular':
+            should_attack_circular = False
+            self.circular_stable_frames = 0
+        elif flag_name == 'rotating':
+            should_attack_rotating = False
+            self.rotating_stable_frames = 0
+        elif flag_name == 'moving':
+            should_attack_moving = False
+            self.moving_stable_frames = 0
+        self.pub.publish(Twist())
 
     # ===================== Endpoint slide-in =====================
 
@@ -838,16 +967,19 @@ class CompetitionControl:
                     shoot_ok = True
                 elif target_type == 'circular':
                     global should_attack_circular
+                    self.last_shoot_ok = None
                     should_attack_circular = True
                     shoot_ok = self._wait_for_shoot('circular',
                         self.global_params.get('shoot_timeout', 15.0))
                 elif target_type == 'rotating':
                     global should_attack_rotating
+                    self.last_shoot_ok = None
                     should_attack_rotating = True
                     shoot_ok = self._wait_for_shoot('rotating',
                         self.global_params.get('shoot_timeout', 15.0))
                 elif target_type == 'moving':
                     global should_attack_moving
+                    self.last_shoot_ok = None
                     should_attack_moving = True
                     shoot_ok = self._wait_for_shoot('moving',
                         self.global_params.get('shoot_timeout', 15.0))
