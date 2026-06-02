@@ -8,6 +8,8 @@ project(track_tag)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  ar_track_alvar_msgs
+  geometry_msgs
   roscpp
   rospy
   std_msgs
@@ -105,7 +107,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES track_tag
-#  CATKIN_DEPENDS roscpp rospy std_msgs
+  CATKIN_DEPENDS ar_track_alvar_msgs geometry_msgs roscpp rospy std_msgs
 #  DEPENDS system_lib
 )
 
@@ -123,7 +125,7 @@ include_directories(
 add_executable(ar_track
   src/ar_track.cpp
 )
-add_dependencies(ar_track track_tag_gencpp)
+add_dependencies(ar_track ${catkin_EXPORTED_TARGETS})
 target_link_libraries(ar_track
   ${catkin_LIBRARIES}
 )

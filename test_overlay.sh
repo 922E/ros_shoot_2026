@@ -92,21 +92,22 @@ else
 fi
 
 echo ""
-echo "[4/5] 检查关键节点是否可以找到..."
+echo "[4/5] 检查 C++ 节点编译产物..."
 
 check_node() {
     local pkg=$1
     local node=$2
-    local result=$(rosrun "$pkg" --list 2>/dev/null | grep -w "$node")
-    if [ -n "$result" ]; then
+    local binary="/home/abot/freeze_ros/ros_shoot_2026/devel/lib/$pkg/$node"
+    if [ -x "$binary" ]; then
         echo "  [OK] $pkg/$node"
     else
-        echo "  [INFO] $pkg/$node (未找到可执行文件，可能是Python脚本)"
+        echo "  [WARN] $pkg/$node 未找到: $binary"
     fi
 }
 
 check_node "shoot_cmd"     "shoot_control"
 check_node "track_tag"     "ar_track"
+echo "  [INFO] shoot_cmd/shoot_control 是旧射击链路产物，2026 主控不要同时启动它"
 
 echo ""
 echo "[5/5] 检查关键文件、topic 和 service 类型..."
@@ -133,7 +134,12 @@ check_type() {
 check_type "geometry_msgs/Twist"
 check_type "std_msgs/String"
 check_type "ar_track_alvar_msgs/AlvarMarkers"
-check_type "TTS_audio/StringService"
+
+if rossrv show "TTS_audio/StringService" >/dev/null 2>&1; then
+    echo "  [OK] TTS_audio/StringService"
+else
+    echo "  [WARN] TTS_audio/StringService"
+fi
 
 echo ""
 echo "============================================"
