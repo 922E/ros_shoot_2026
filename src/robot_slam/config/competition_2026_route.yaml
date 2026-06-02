@@ -79,6 +79,7 @@ route_points:
       yaw: 0.0
 
 target_ids:
+  circular: 34
   rotating: 1
   moving: 6
 

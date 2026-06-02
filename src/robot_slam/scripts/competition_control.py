@@ -167,7 +167,7 @@ class CompetitionControl:
     def circular_target(self, data):
         """环形靶瞄准回调 (same as shoot_2025.py)"""
         global point_msg, should_attack_circular
-        target_id = 34
+        target_id = self.target_ids.get('circular', 34)
         aim_center_x = 320.0
         fire_threshold_px = 10.0
         stable_frames_required = 1
@@ -185,6 +185,10 @@ class CompetitionControl:
         if data.z != target_id:
             self.circular_stable_frames = 0
             self.pub.publish(Twist())
+            rospy.logwarn_throttle(
+                1.0,
+                "Circular target waiting: detected_id=%.0f expected=%d x=%.1f",
+                data.z, target_id, data.x)
             return
 
         offset_x = data.x - aim_center_x
@@ -200,6 +204,10 @@ class CompetitionControl:
             msg = Twist()
             msg.angular.z = angular_z
             self.pub.publish(msg)
+            rospy.loginfo_throttle(
+                1.0,
+                "Circular target aiming: id=%.0f offset_x=%.1f wz=%.3f",
+                data.z, offset_x, angular_z)
 
         else:
             self.circular_stable_frames += 1
@@ -255,6 +263,10 @@ class CompetitionControl:
                     msg = Twist()
                     msg.angular.z = angular_z
                     self.pub.publish(msg)
+                    rospy.loginfo_throttle(
+                        1.0,
+                        "Rotating target aiming: id=%d x=%.3f y=%.3f wz=%.3f",
+                        marker.id, ax, ay, angular_z)
 
                 elif y_ok:
                     self.rotating_stable_frames += 1
@@ -277,11 +289,20 @@ class CompetitionControl:
                 else:
                     self.rotating_stable_frames = 0
                     self.pub.publish(Twist())
+                    rospy.logwarn_throttle(
+                        1.0,
+                        "Rotating target y outside window: id=%d x=%.3f y=%.3f expected=[%.3f,%.3f]",
+                        marker.id, ax, ay, y_min, y_max)
                 return
 
         if not found_target:
             self.rotating_stable_frames = 0
             self.pub.publish(Twist())
+            rospy.logwarn_throttle(
+                1.0,
+                "Rotating target waiting: expected_id=%s visible_ids=%s",
+                str(target_id_rotating),
+                str([marker.id for marker in data.markers]))
 
     def moving_target(self, data):
         """移动靶瞄准回调 (same as shoot_2025.py)"""
@@ -316,6 +337,10 @@ class CompetitionControl:
                     msg = Twist()
                     msg.angular.z = angular_z
                     self.pub.publish(msg)
+                    rospy.loginfo_throttle(
+                        1.0,
+                        "Moving target aiming: id=%d x=%.3f wz=%.3f",
+                        marker.id, ax, angular_z)
 
                 else:
                     self.moving_stable_frames += 1
@@ -339,6 +364,11 @@ class CompetitionControl:
         if not found_target:
             self.moving_stable_frames = 0
             self.pub.publish(Twist())
+            rospy.logwarn_throttle(
+                1.0,
+                "Moving target waiting: expected_id=%s visible_ids=%s",
+                str(target_id_moving),
+                str([marker.id for marker in data.markers]))
 
     # ===================== Navigation =====================
 
