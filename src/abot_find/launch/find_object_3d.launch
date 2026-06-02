@@ -6,7 +6,7 @@
 		<param name="gui" value="true" type="bool"/>
 		<param name="settings_path" value="~/.ros/find_object_2d.ini" type="str"/>
 		<param name="subscribe_depth" value="true" type="bool"/>
-		<param name="objects_path" value="~/catkin_ws/src/find-object-melodic-devel/object" type="str"/>
+		<param name="objects_path" value="$(find find_object_2d)/object" type="str"/>
 		<param name="object_prefix" value="object" type="str"/>
        
                 <remap from="rgb/image_rect_color" to="camera/color/image_raw"/>

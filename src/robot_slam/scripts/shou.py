@@ -6,7 +6,8 @@ from geometry_msgs.msg import Twist
 from time import sleep
 import threading
 import os
-music1_path="/home/abot/abot_ws/src/robot_slam/mp3/feng.mp3"
+music1_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "mp3", "feng.mp3")
 
 def chinese_callback(msg):
     keywords_fast = ['染', '毒', '地', '带']
