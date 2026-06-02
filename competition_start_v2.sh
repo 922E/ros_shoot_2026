@@ -1,0 +1,10 @@
+#!/bin/bash
+### 2026 射击挑战赛 - v2 隔离测试启动 ###
+### 首轮关闭 ASR，使用 YAML 固定靶标 ID，先验证直控路线和射击链。 ###
+gnome-terminal --window -e 'bash -c "roscore; exec bash"' \
+--tab -e 'bash -c "sleep 3; source /opt/ros/melodic/setup.bash; source ~/freeze_ros/ros_shoot_2026/devel/setup.bash; export ROS_PACKAGE_PATH=$HOME/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH; roslaunch $HOME/freeze_ros/ros_shoot_2026/src/abot_base/abot_bringup/launch/robot_with_imu.launch; exec bash"' \
+--tab -e 'bash -c "sleep 4; source /opt/ros/melodic/setup.bash; source ~/freeze_ros/ros_shoot_2026/devel/setup.bash; export ROS_PACKAGE_PATH=$HOME/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH; roslaunch $HOME/freeze_ros/ros_shoot_2026/src/robot_slam/launch/navigation_freeze.launch; exec bash"' \
+--tab -e 'bash -c "sleep 4; source /opt/ros/melodic/setup.bash; source ~/freeze_ros/ros_shoot_2026/devel/setup.bash; export ROS_PACKAGE_PATH=$HOME/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH; roslaunch $HOME/freeze_ros/ros_shoot_2026/src/track_tag/launch/usb_cam_with_calibration.launch; exec bash"' \
+--tab -e 'bash -c "sleep 4; source /opt/ros/melodic/setup.bash; source ~/freeze_ros/ros_shoot_2026/devel/setup.bash; export ROS_PACKAGE_PATH=$HOME/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH; roslaunch $HOME/freeze_ros/ros_shoot_2026/src/track_tag/launch/ar_track_camera.launch; exec bash"' \
+--tab -e 'bash -c "sleep 4; source /opt/ros/melodic/setup.bash; source ~/freeze_ros/ros_shoot_2026/devel/setup.bash; export ROS_PACKAGE_PATH=$HOME/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH; roslaunch $HOME/freeze_ros/ros_shoot_2026/src/abot_find/launch/find_object_2d.launch; exec bash"' \
+--tab -e 'bash -c "sleep 5; source /opt/ros/melodic/setup.bash; source ~/freeze_ros/ros_shoot_2026/devel/setup.bash; export ROS_PACKAGE_PATH=$HOME/freeze_ros/ros_shoot_2026/src:$ROS_PACKAGE_PATH; roslaunch $HOME/freeze_ros/ros_shoot_2026/src/robot_slam/launch/competition_2026_v2.launch enable_voice_asr:=false voice_required:=false allow_default_target_ids:=true require_wakeup_word:=false; exec bash"'
