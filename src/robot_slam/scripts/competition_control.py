@@ -26,7 +26,7 @@ SHOOT_XY_TOL = 0.06        # fine_adjust_xy success threshold (m)
 SHOOT_TASK_DIST_TOL = 0.08 # TASK entry max distance (m)
 TASK_NAV_TOL = 0.14        # rough move_base handoff; fine adjust owns final xy
 TASK_NAV_TIMEOUT = 10.0    # avoid waiting on the last few centimeters
-FINE_ADJUST_MAX_SPEED = 0.10
+FINE_ADJUST_MAX_SPEED = 0.14
 FINE_ADJUST_GAIN = 0.65
 
 # Relay arrival: near target y-line + target-centered x corridor
@@ -40,8 +40,8 @@ RELAY_ROTATE_TIMEOUT = 5.0 # enough for a large heading correction (s)
 ROTATE_RETRY_LIMIT = 1     # one bounded attempt; hard limit decides continue/stop
 ROTATE_CMD_SIGN = 1.0      # auto-flipped if yaw error grows during rotation
 RELAY_DRIVE_TIMEOUT = 10.0 # cmd_vel corridor traversal timeout (s)
-RELAY_MAX_VX = 0.10        # map x correction speed while crossing corridor
-RELAY_MAX_VY = 0.24        # map y traversal speed through narrow corridor
+RELAY_MAX_VX = 0.14        # map x correction speed while crossing corridor
+RELAY_MAX_VY = 0.30        # map y traversal speed through narrow corridor
 RELAY_MAX_WZ = 0.18        # weak yaw hold, avoid in-corridor large turns
 
 # back_y_only: retreat to safe x corridor while keeping y near task line
@@ -53,15 +53,15 @@ BACK_YAW_TOL = 20.0        # coarse yaw alignment at helper points (deg)
 BACK_ROTATE_TIMEOUT = 3.0  # keep helper-point alignment bounded (s)
 BACK_PUSH_TOL = 0.06       # cmd_vel helper correction target tolerance (m)
 BACK_PUSH_TIMEOUT = 2.0    # short push, cheaper than another move_base retry
-BACK_PUSH_SPEED = 0.14     # quick handoff correction after move_base
+BACK_PUSH_SPEED = 0.18     # quick handoff correction after move_base
 
 # End slide
 END_ACCEPT_TOL = 0.04      # end zone needs a tighter final center lock
 END_PRE_TIMEOUT = 12.0     # don't wait 60s for a tight pre-point
-END_PRE_SPEED = 0.14       # cmd_vel fallback speed to pre-point
-END_SLIDE_SPEED = 0.14     # final slide speed into 40x40cm end zone
+END_PRE_SPEED = 0.18       # cmd_vel fallback speed to pre-point
+END_SLIDE_SPEED = 0.18     # final slide speed into 40x40cm end zone
 END_SLIDE_TIMEOUT = 12.0
-END_RETRY_SPEED = 0.08     # slow final settle if the first slide times out
+END_RETRY_SPEED = 0.10     # slow final settle if the first slide times out
 END_RETRY_TIMEOUT = 3.0
 
 # Global state flags (same as shoot_2025.py)
@@ -236,7 +236,8 @@ class CompetitionControl:
         x_threshold = self.global_params.get('rotating_x_threshold', 0.1)
         y_min = self.global_params.get('rotating_y_min', -0.1)
         y_max = self.global_params.get('rotating_y_max', 0.1)
-        stable_frames_required = 2
+        stable_frames_required = int(
+            self.global_params.get('rotating_stable_frames_required', 2))
         kp_far = self.global_params.get('rotating_kp_far', 0.55)
         kp_near = self.global_params.get('rotating_kp_near', 0.35)
         near_threshold = 0.18

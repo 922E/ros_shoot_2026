@@ -13,7 +13,7 @@ route_points:
     type: "task"
     target_type: "circular"
     x: 1.165
-    y: -0.554
+    y: -0.504
     yaw: 0.0
 
   # ── 后退1: 退回安全 x 走廊 ──
@@ -63,7 +63,7 @@ route_points:
     type: "task"
     target_type: "moving"
     x: 1.176
-    y: -2.877
+    y: -2.977
     yaw: 0.0
 
   # ── 终点 (10分)。costmap 阻挡，先到前置点再低速滑入 ──
@@ -90,9 +90,10 @@ global:
   shoot_timeout: 15.0
   shoot_cooldown: 2.0
   circular_search_wz: 0.18
-  rotating_x_threshold: 0.10
-  rotating_y_min: -0.10
-  rotating_y_max: 0.10
+  rotating_x_threshold: 0.14
+  rotating_y_min: -0.78
+  rotating_y_max: -0.69
+  rotating_stable_frames_required: 1
   rotating_kp_far: 0.55
   rotating_kp_near: 0.35
   rotating_max_wz: 0.30
