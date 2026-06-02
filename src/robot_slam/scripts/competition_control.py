@@ -176,6 +176,7 @@ class CompetitionControl:
         near_threshold_px = 40.0
         max_wz = 0.65
         min_wz = 0.08
+        search_wz = self.global_params.get('circular_search_wz', 0.12)
 
         if not should_attack_circular:
             self.circular_stable_frames = 0
@@ -184,11 +185,14 @@ class CompetitionControl:
 
         if data.z != target_id:
             self.circular_stable_frames = 0
-            self.pub.publish(Twist())
+            msg = Twist()
+            if data.z == 255:
+                msg.angular.z = search_wz
+            self.pub.publish(msg)
             rospy.logwarn_throttle(
                 1.0,
-                "Circular target waiting: detected_id=%.0f expected=%d x=%.1f",
-                data.z, target_id, data.x)
+                "Circular target waiting: detected_id=%.0f expected=%d x=%.1f search_wz=%.3f",
+                data.z, target_id, data.x, msg.angular.z)
             return
 
         offset_x = data.x - aim_center_x
@@ -229,15 +233,15 @@ class CompetitionControl:
     def rotating_target(self, data):
         """旋转靶瞄准回调 (same as shoot_2025.py)"""
         global target_id_rotating, should_attack_rotating
-        x_threshold = 0.1
-        y_min = -0.1
-        y_max = 0.1
+        x_threshold = self.global_params.get('rotating_x_threshold', 0.1)
+        y_min = self.global_params.get('rotating_y_min', -0.1)
+        y_max = self.global_params.get('rotating_y_max', 0.1)
         stable_frames_required = 2
-        kp_far = 1.0
-        kp_near = 0.65
+        kp_far = self.global_params.get('rotating_kp_far', 0.55)
+        kp_near = self.global_params.get('rotating_kp_near', 0.35)
         near_threshold = 0.18
-        max_wz = 0.55
-        min_wz = 0.06
+        max_wz = self.global_params.get('rotating_max_wz', 0.30)
+        min_wz = self.global_params.get('rotating_min_wz', 0.04)
         shoot_cooldown = 0.2
 
         if not should_attack_rotating:
@@ -482,6 +486,9 @@ class CompetitionControl:
                       x, y, pos_tol, self.robot_x, self.robot_y)
 
         for attempt in range(3):
+            if rospy.is_shutdown():
+                self.pub.publish(Twist())
+                return False
             self._update_robot_pose()
             d = math.hypot(self.robot_x - x, self.robot_y - y)
             if d <= pos_tol:
@@ -520,6 +527,10 @@ class CompetitionControl:
                 msg.angular.z = 0.0
                 self.pub.publish(msg)
                 rate.sleep()
+
+            if rospy.is_shutdown():
+                self.pub.publish(Twist())
+                return False
 
         self.pub.publish(Twist())
         rospy.logerr("[FINE_ADJUST_XY] FAIL after 3 attempts")
@@ -973,6 +984,8 @@ class CompetitionControl:
             self.goto(x, y, yaw_deg, timeout=TASK_NAV_TIMEOUT,
                       tol=TASK_NAV_TOL)
             self.cancel()
+            if rospy.is_shutdown():
+                return
 
             # Step 2: pre-check. Navigation owns position only; the shooting
             # module owns final yaw/aiming through visual feedback.

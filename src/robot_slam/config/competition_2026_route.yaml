@@ -29,7 +29,7 @@ route_points:
     name: "途经安全点1"
     type: "relay"
     x: 0.200
-    y: -1.564
+    y: -1.464
     yaw: 0.0
 
   # ── 射击点2: 旋转靶 (15分) ──
@@ -89,6 +89,14 @@ global:
   task_timeout: 60.0
   shoot_timeout: 15.0
   shoot_cooldown: 2.0
+  circular_search_wz: 0.12
+  rotating_x_threshold: 0.10
+  rotating_y_min: -0.10
+  rotating_y_max: 0.10
+  rotating_kp_far: 0.55
+  rotating_kp_near: 0.35
+  rotating_max_wz: 0.30
+  rotating_min_wz: 0.04
 
 field:
   size: 3.6
