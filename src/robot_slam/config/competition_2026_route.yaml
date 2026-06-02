@@ -89,7 +89,7 @@ global:
   task_timeout: 60.0
   shoot_timeout: 15.0
   shoot_cooldown: 2.0
-  circular_search_wz: 0.12
+  circular_search_wz: 0.18
   rotating_x_threshold: 0.10
   rotating_y_min: -0.10
   rotating_y_max: 0.10
