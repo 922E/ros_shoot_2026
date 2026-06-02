@@ -1,29 +1,51 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-# 上面这行指定了Python解释器路径，使得脚本可以直接在命令行中执行
-import rospy
+
+import argparse
 import serial
+import sys
 import time
-from std_msgs.msg import String
 
-# 设置串口和波特率
-serialPort = "/dev/shoot"
-baudRate = 9600
+FIRE_COMMAND = b'\x55\x01\x12\x00\x00\x00\x01\x69'
+STOP_COMMAND = b'\x55\x01\x11\x00\x00\x00\x01\x68'
 
-# 打开串口
-ser = serial.Serial(port=serialPort, baudrate=baudRate, parity="N", bytesize=8, stopbits=1)
+
+def _write_command(ser, name, command):
+    written = ser.write(command)
+    ser.flush()
+    print("%s: wrote %d/%d bytes" % (name, written, len(command)))
+    if written != len(command):
+        raise IOError("%s command was not fully written" % name)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Send one shooter test pulse")
+    parser.add_argument("--port", default="/dev/shoot")
+    parser.add_argument("--settle", type=float, default=1.0,
+                        help="seconds to wait after opening the serial port")
+    parser.add_argument("--pulse", type=float, default=0.10,
+                        help="seconds between fire and stop commands")
+    args = parser.parse_args()
+
+    print("Opening %s at 9600 8N1" % args.port)
+    ser = serial.Serial(port=args.port, baudrate=9600, parity="N",
+                        bytesize=8, stopbits=1, timeout=1)
+    try:
+        print("Serial opened. Waiting %.2fs before the test pulse." %
+              args.settle)
+        time.sleep(args.settle)
+        _write_command(ser, "fire", FIRE_COMMAND)
+        time.sleep(args.pulse)
+        _write_command(ser, "stop", STOP_COMMAND)
+        print("Test pulse sent.")
+    finally:
+        ser.close()
+        print("Serial closed.")
+
 
 if __name__ == '__main__':
     try:
-        # 发送射击指令
-        ser.write(b'\x55\x01\x12\x00\x00\x00\x01\x69')
-        print ('打印射击')
-        # 等待0.1秒
-        time.sleep(0.08)
-        # 发送停止射击指令
-        ser.write(b'\x55\x01\x11\x00\x00\x00\x01\x68')
-        # 进入ROS的spin循环，保持节点持续运行
-        rospy.spin()
-    except:
-        pass
-
+        main()
+    except Exception as exc:
+        print("Shoot test failed: %s" % exc)
+        sys.exit(1)

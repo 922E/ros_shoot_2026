@@ -1,0 +1,143 @@
+[rospy.client][INFO] 2026-05-28 21:56:05,645: init_node, name[/competition_control], pid[23362]
+[xmlrpc][INFO] 2026-05-28 21:56:05,646: XML-RPC server binding to 0.0.0.0:0
+[rospy.init][INFO] 2026-05-28 21:56:05,646: ROS Slave URI: [http://abot-robot:43531/]
+[xmlrpc][INFO] 2026-05-28 21:56:05,646: Started XML-RPC server [http://abot-robot:43531/]
+[rospy.impl.masterslave][INFO] 2026-05-28 21:56:05,646: _ready: http://abot-robot:43531/
+[rospy.registration][INFO] 2026-05-28 21:56:05,665: Registering with master node http://localhost:11311
+[xmlrpc][INFO] 2026-05-28 21:56:05,666: xml rpc node: starting XML-RPC server
+[rospy.init][INFO] 2026-05-28 21:56:05,746: registered with master
+[rospy.rosout][INFO] 2026-05-28 21:56:05,747: initializing /rosout core topic
+[rospy.rosout][INFO] 2026-05-28 21:56:05,767: connected to core topic /rosout
+[rospy.simtime][INFO] 2026-05-28 21:56:05,775: /use_sim_time is not set, will not subscribe to simulated time [/clock] topic
+[rosout][INFO] 2026-05-28 21:56:05,847: Loaded route: 8 points
+[rospy.internal][INFO] 2026-05-28 21:56:05,908: topic[/ar_pose_marker] adding connection to [http://abot-robot:37171/], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:05,948: topic[/competition_state] adding connection to [/competition_monitor], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:05,974: topic[/rosout] adding connection to [/rosout], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,036: topic[/initialpose] adding connection to [/amcl], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,102: topic[/cmd_vel] adding connection to [/abot_driver], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,194: topic[/move_base_simple/goal] adding connection to [/move_base], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,417: topic[/move_base/feedback] adding connection to [http://abot-robot:33241/], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,421: topic[/move_base/status] adding connection to [http://abot-robot:33241/], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,437: topic[/move_base/result] adding connection to [http://abot-robot:33241/], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,532: topic[/move_base/goal] adding connection to [/move_base], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,543: topic[/move_base/cancel] adding connection to [/move_base], count 0
+[rosout][WARNING] 2026-05-28 21:56:06,550: /dev/shoot not available, shoot disabled
+[rosout][INFO] 2026-05-28 21:56:06,567: competition_control init OK, state: WAIT_START
+[rospy.internal][INFO] 2026-05-28 21:56:06,606: topic[/tf_static] adding connection to [http://abot-robot:34845/], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,621: topic[/tf] adding connection to [http://abot-robot:46825/], count 0
+[rospy.internal][INFO] 2026-05-28 21:56:06,629: topic[/tf] adding connection to [http://abot-robot:36695/], count 1
+[rospy.internal][INFO] 2026-05-28 21:56:06,631: topic[/tf] adding connection to [http://abot-robot:44531/], count 2
+[rospy.internal][INFO] 2026-05-28 21:56:06,638: topic[/tf] adding connection to [http://abot-robot:36229/], count 3
+[rospy.internal][INFO] 2026-05-28 21:56:06,651: topic[/tf] adding connection to [http://abot-robot:42567/], count 4
+[rospy.internal][INFO] 2026-05-28 21:56:06,659: topic[/tf] adding connection to [http://abot-robot:34845/], count 5
+[rospy.internal][INFO] 2026-05-28 21:56:06,670: topic[/tf] adding connection to [http://abot-robot:40381/], count 6
+[rospy.internal][INFO] 2026-05-28 21:56:06,671: topic[/tf] adding connection to [http://abot-robot:40873/], count 6
+[rospy.internal][INFO] 2026-05-28 21:56:06,687: topic[/tf] adding connection to [http://abot-robot:35011/], count 8
+[rospy.internal][INFO] 2026-05-28 21:56:06,692: topic[/tf] adding connection to [http://abot-robot:37171/], count 9
+[rosout][INFO] 2026-05-28 21:56:07,073: Initial pose set: (0.031, -0.020)
+[rosout][INFO] 2026-05-28 21:56:07,076: IDs - rotating:1 moving:6
+[rosout][INFO] 2026-05-28 21:56:07,079: Place robot at start mark, press Enter
+[rosout][INFO] 2026-05-28 21:56:19,569: Competition started!
+[rosout][INFO] 2026-05-28 21:56:19,578: Triggering voice recognition...
+[rosout][INFO] 2026-05-28 21:56:21,581: IDs already known (rotating=1 moving=6), skip voice wait
+[rosout][INFO] 2026-05-28 21:56:21,584: IDs - rotating:1 moving:6
+[rosout][INFO] 2026-05-28 21:56:21,586: NAV_LOOP: 8 points
+[rosout][INFO] 2026-05-28 21:56:21,593: [1/8] 射击点1-环形靶 target(1.165,-0.554) robot(0.031,-0.020)
+[rosout][INFO] 2026-05-28 21:56:21,599: [TASK_PRE] 射击点1-环形靶 target=(1.165,-0.554,0deg) robot=(0.031,-0.020,-0deg)
+[rosout][INFO] 2026-05-28 21:56:21,604: Nav to: (1.165, -0.554) tol=0.140
+[rosout][INFO] 2026-05-28 21:56:27,007: [ARRIVE] OK dist=0.119 tol=0.140 robot=(1.083,-0.468,-13deg)
+[rosout][INFO] 2026-05-28 21:56:27,009: [FINE_ADJUST_XY] target=(1.165,-0.554) tol=0.060 robot=(1.083,-0.468)
+[rosout][INFO] 2026-05-28 21:56:28,313: [FINE_ADJUST_XY] OK dist=0.056 attempt=0
+[rosout][INFO] 2026-05-28 21:56:28,315: [TASK] 射击点1-环形靶 target=(1.165,-0.554,0deg) robot=(1.138,-0.505,-14deg) dist=0.056 yaw_err=14deg
+[rosout][WARNING] 2026-05-28 21:56:28,317: [TASK] Dry-run, skip shoot: 射击点1-环形靶
+[rosout][INFO] 2026-05-28 21:56:28,319: [TASK] Done: 射击点1-环形靶
+[rosout][INFO] 2026-05-28 21:56:28,324: [2/8] 后退1 target(0.200,-0.654) robot(1.138,-0.505)
+[rosout][INFO] 2026-05-28 21:56:28,330: [BACK_Y] goto (0.200,-0.654)
+[rosout][INFO] 2026-05-28 21:56:28,332: Nav to: (0.200, -0.654) tol=0.120
+[rosout][INFO] 2026-05-28 21:56:34,334: [ARRIVE] OK dist=0.116 tol=0.120 robot=(0.293,-0.586,-2deg)
+[rosout][INFO] 2026-05-28 21:56:34,339: [BACK_Y] check attempt=1 x=0.293(x_safe=True) y=-0.586(y_ok=True)
+[rosout][INFO] 2026-05-28 21:56:34,341: [BACK_Y] OK x=0.293 y=-0.586 target_y=-0.654
+[rosout][INFO] 2026-05-28 21:56:34,342: [BACK_Y] short cmd push dist=0.116
+[rosout][INFO] 2026-05-28 21:56:34,348: [BACK_PUSH] Sliding to (0.200,-0.654) speed=0.140
+[rosout][INFO] 2026-05-28 21:56:35,651: [BACK_PUSH] Slide accept, dist=0.052 tol=0.060
+[rosout][INFO] 2026-05-28 21:56:35,757: [ROTATE] to 0deg from -2deg
+[rosout][INFO] 2026-05-28 21:56:35,762: [ROTATE] OK robot_yaw=-2deg
+[rosout][INFO] 2026-05-28 21:56:35,764: [3/8] 途经安全点1 target(0.200,-1.564) robot(0.244,-0.627)
+[rosout][INFO] 2026-05-28 21:56:35,867: [RELAY_DRIVE] target=(0.200,-1.564) yaw=0deg
+[rosout][INFO] 2026-05-28 21:56:40,771: [RELAY_DRIVE] OK x=0.193 y=-1.495
+[rosout][INFO] 2026-05-28 21:56:40,776: [RELAY] before 射击点2-旋转靶 yaw_err=1deg
+[rosout][INFO] 2026-05-28 21:56:40,779: [4/8] 射击点2-旋转靶 target(1.170,-1.756) robot(0.193,-1.495)
+[rosout][INFO] 2026-05-28 21:56:40,781: [TASK_PRE] 射击点2-旋转靶 target=(1.170,-1.756,0deg) robot=(0.193,-1.495,-1deg)
+[rosout][INFO] 2026-05-28 21:56:40,783: Nav to: (1.170, -1.756) tol=0.140
+[rosout][INFO] 2026-05-28 21:56:45,388: [ARRIVE] OK dist=0.139 tol=0.140 robot=(1.040,-1.706,-4deg)
+[rosout][INFO] 2026-05-28 21:56:45,397: [FINE_ADJUST_XY] target=(1.170,-1.756) tol=0.060 robot=(1.040,-1.706)
+[rosout][INFO] 2026-05-28 21:56:46,500: [FINE_ADJUST_XY] OK dist=0.057 attempt=0
+[rosout][INFO] 2026-05-28 21:56:46,502: [TASK] 射击点2-旋转靶 target=(1.170,-1.756,0deg) robot=(1.123,-1.725,-4deg) dist=0.057 yaw_err=4deg
+[rosout][WARNING] 2026-05-28 21:56:46,506: [TASK] Dry-run, skip shoot: 射击点2-旋转靶
+[rosout][INFO] 2026-05-28 21:56:46,508: [TASK] Done: 射击点2-旋转靶
+[rosout][INFO] 2026-05-28 21:56:46,510: [5/8] 后退2 target(0.200,-2.060) robot(1.123,-1.725)
+[rosout][INFO] 2026-05-28 21:56:46,511: [BACK_Y] goto (0.200,-2.060)
+[rosout][INFO] 2026-05-28 21:56:46,513: Nav to: (0.200, -2.060) tol=0.120
+[rosout][INFO] 2026-05-28 21:56:51,417: [ARRIVE] OK dist=0.119 tol=0.120 robot=(0.308,-2.010,3deg)
+[rosout][INFO] 2026-05-28 21:56:51,420: [BACK_Y] check attempt=1 x=0.308(x_safe=True) y=-2.010(y_ok=True)
+[rosout][INFO] 2026-05-28 21:56:51,422: [BACK_Y] OK x=0.308 y=-2.010 target_y=-2.060
+[rosout][INFO] 2026-05-28 21:56:51,423: [BACK_Y] short cmd push dist=0.119
+[rosout][INFO] 2026-05-28 21:56:51,426: [BACK_PUSH] Sliding to (0.200,-2.060) speed=0.140
+[rosout][INFO] 2026-05-28 21:56:52,929: [BACK_PUSH] Slide accept, dist=0.052 tol=0.060
+[rosout][INFO] 2026-05-28 21:56:53,032: [ROTATE] to 0deg from 4deg
+[rosout][INFO] 2026-05-28 21:56:53,035: [ROTATE] OK robot_yaw=4deg
+[rosout][INFO] 2026-05-28 21:56:53,040: [6/8] 途经安全点2 target(0.200,-2.710) robot(0.243,-2.030)
+[rosout][INFO] 2026-05-28 21:56:53,143: [RELAY_DRIVE] target=(0.200,-2.710) yaw=0deg
+[rosout][INFO] 2026-05-28 21:56:56,746: [RELAY_DRIVE] OK x=0.206 y=-2.632
+[rosout][INFO] 2026-05-28 21:56:56,748: [RELAY] before 射击点3-移动靶 yaw_err=3deg
+[rosout][INFO] 2026-05-28 21:56:56,750: [7/8] 射击点3-移动靶 target(1.176,-2.877) robot(0.206,-2.632)
+[rosout][INFO] 2026-05-28 21:56:56,755: [TASK_PRE] 射击点3-移动靶 target=(1.176,-2.877,0deg) robot=(0.206,-2.632,3deg)
+[rosout][INFO] 2026-05-28 21:56:56,759: Nav to: (1.176, -2.877) tol=0.140
+[rosout][INFO] 2026-05-28 21:57:01,363: [ARRIVE] OK dist=0.139 tol=0.140 robot=(1.037,-2.869,1deg)
+[rosout][INFO] 2026-05-28 21:57:01,366: [FINE_ADJUST_XY] target=(1.176,-2.877) tol=0.060 robot=(1.037,-2.869)
+[rosout][INFO] 2026-05-28 21:57:02,973: [FINE_ADJUST_XY] OK dist=0.058 attempt=0
+[rosout][INFO] 2026-05-28 21:57:02,980: [TASK] 射击点3-移动靶 target=(1.176,-2.877,0deg) robot=(1.119,-2.888,2deg) dist=0.058 yaw_err=-2deg
+[rosout][WARNING] 2026-05-28 21:57:02,984: [TASK] Dry-run, skip shoot: 射击点3-移动靶
+[rosout][INFO] 2026-05-28 21:57:02,985: [TASK] Done: 射击点3-移动靶
+[rosout][INFO] 2026-05-28 21:57:02,989: [8/8] 终点 target(0.005,-3.350) robot(1.119,-2.888)
+[rosout][INFO] 2026-05-28 21:57:02,991: Nav to: (0.200, -3.090) tol=0.120
+[rosout][WARNING] 2026-05-28 21:57:14,994: [ARRIVE] TIMEOUT dist=0.131 tol=0.120 robot=(0.310,-3.018)
+[rosout][WARNING] 2026-05-28 21:57:14,997: [END] pre-point move_base timeout, cmd_vel fallback
+[rosout][INFO] 2026-05-28 21:57:15,001: [END_PRE] Sliding to (0.200,-3.090) speed=0.140
+[rosout][INFO] 2026-05-28 21:57:15,403: [END_PRE] Slide accept, dist=0.118 tol=0.120
+[rosout][INFO] 2026-05-28 21:57:15,407: [END] Pre-point handled, now sliding to endpoint
+[rosout][INFO] 2026-05-28 21:57:15,410: [END] Sliding to (0.005,-3.350) speed=0.140
+[rosout][INFO] 2026-05-28 21:57:19,413: [END] Slide accept, dist=0.035 tol=0.040
+[rosout][INFO] 2026-05-28 21:57:19,415: ========== COMPETITION FINISHED! ==========
+[rospy.core][INFO] 2026-05-28 21:57:19,420: signal_shutdown [atexit]
+[rospy.internal][INFO] 2026-05-28 21:57:19,437: topic[/move_base_simple/goal] removing connection to /move_base
+[rospy.internal][INFO] 2026-05-28 21:57:19,437: topic[/competition_state] removing connection to /competition_monitor
+[rospy.internal][INFO] 2026-05-28 21:57:19,437: topic[/rosout] removing connection to /rosout
+[rospy.internal][INFO] 2026-05-28 21:57:19,437: topic[/move_base/goal] removing connection to /move_base
+[rospy.internal][INFO] 2026-05-28 21:57:19,437: topic[/initialpose] removing connection to /amcl
+[rospy.internal][INFO] 2026-05-28 21:57:19,440: topic[/move_base/cancel] removing connection to /move_base
+[rospy.internal][INFO] 2026-05-28 21:57:19,440: topic[/cmd_vel] removing connection to /abot_driver
+[rospy.internal][INFO] 2026-05-28 21:57:19,440: topic[/tf_static] removing connection to http://abot-robot:34845/
+[rospy.internal][INFO] 2026-05-28 21:57:19,442: topic[/ar_pose_marker] removing connection to http://abot-robot:37171/
+[rospy.internal][INFO] 2026-05-28 21:57:19,443: topic[/tf] removing connection to http://abot-robot:46825/
+[rospy.internal][INFO] 2026-05-28 21:57:19,443: topic[/tf] removing connection to http://abot-robot:36695/
+[rospy.internal][INFO] 2026-05-28 21:57:19,447: topic[/tf] removing connection to http://abot-robot:44531/
+[rospy.internal][INFO] 2026-05-28 21:57:19,447: topic[/tf] removing connection to http://abot-robot:36229/
+[rospy.internal][INFO] 2026-05-28 21:57:19,447: topic[/tf] removing connection to http://abot-robot:42567/
+[rospy.internal][INFO] 2026-05-28 21:57:19,447: topic[/tf] removing connection to http://abot-robot:34845/
+[rospy.internal][INFO] 2026-05-28 21:57:19,448: topic[/tf] removing connection to http://abot-robot:40381/
+[rospy.internal][INFO] 2026-05-28 21:57:19,448: topic[/tf] removing connection to http://abot-robot:40873/
+[rospy.internal][INFO] 2026-05-28 21:57:19,449: topic[/tf] removing connection to http://abot-robot:35011/
+[rospy.internal][INFO] 2026-05-28 21:57:19,449: topic[/tf] removing connection to http://abot-robot:37171/
+[rospy.internal][INFO] 2026-05-28 21:57:19,450: topic[/move_base/status] removing connection to http://abot-robot:33241/
+[rospy.internal][INFO] 2026-05-28 21:57:19,450: topic[/move_base/status] removing connection to http://abot-robot:33241/
+[rospy.topics][ERROR] 2026-05-28 21:57:19,450: Traceback (most recent call last):
+  File "/opt/ros/melodic/lib/python2.7/dist-packages/rospy/topics.py", line 326, in close
+    c.close()
+  File "/opt/ros/melodic/lib/python2.7/dist-packages/rospy/impl/tcpros_base.py", line 858, in close
+    self.socket.close()
+AttributeError: 'NoneType' object has no attribute 'close'
+
+[rospy.internal][INFO] 2026-05-28 21:57:19,451: topic[/move_base/result] removing connection to http://abot-robot:33241/
+[rospy.internal][INFO] 2026-05-28 21:57:19,451: topic[/move_base/feedback] removing connection to http://abot-robot:33241/
+[rospy.impl.masterslave][INFO] 2026-05-28 21:57:19,452: atexi

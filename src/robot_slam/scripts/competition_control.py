@@ -131,8 +131,9 @@ class CompetitionControl:
             self.ser = serial.Serial(port="/dev/shoot", baudrate=9600,
                                      parity="N", bytesize=8, stopbits=1)
             rospy.loginfo("Serial port /dev/shoot opened")
-        except Exception:
-            rospy.logwarn("/dev/shoot not available, shoot disabled")
+        except Exception as exc:
+            rospy.logwarn("/dev/shoot not available, shoot disabled: %s",
+                          str(exc))
 
         # TF listener
         self.tf_listener = tf.TransformListener()
@@ -177,8 +178,10 @@ class CompetitionControl:
             msg.angular.z = -0.02 * offset_x
             self.pub.publish(msg)
         elif abs(offset_x) <= 10 and data.z == 34:
-            self._fire()
-            rospy.loginfo("Circular target hit!")
+            if self._fire():
+                rospy.loginfo("Circular target pulse sent")
+            else:
+                rospy.logerr("Circular target pulse failed")
             should_attack_circular = False
 
     def rotating_target(self, data):
@@ -196,9 +199,12 @@ class CompetitionControl:
                     msg.angular.z = -1.0 * ax
                     self.pub.publish(msg)
                 elif Min_y <= ay <= Max_y:
-                    self._fire()
+                    fire_ok = self._fire()
                     rospy.sleep(2)
-                    rospy.loginfo("Rotating target hit!")
+                    if fire_ok:
+                        rospy.loginfo("Rotating target pulse sent")
+                    else:
+                        rospy.logerr("Rotating target pulse failed")
                     should_attack_rotating = False
 
     def moving_target(self, data):
@@ -214,9 +220,12 @@ class CompetitionControl:
                     msg.angular.z = -0.95 * ax
                     self.pub.publish(msg)
                 else:
-                    self._fire()
+                    fire_ok = self._fire()
                     rospy.sleep(0.1)
-                    rospy.loginfo("Moving target hit!")
+                    if fire_ok:
+                        rospy.loginfo("Moving target pulse sent")
+                    else:
+                        rospy.logerr("Moving target pulse failed")
                     should_attack_moving = False
 
     # ===================== Navigation =====================
@@ -473,10 +482,27 @@ class CompetitionControl:
         """Fire using serial (same as shoot_2025.py)"""
         if self.ser is None:
             rospy.logwarn("Serial not available, cannot fire")
-            return
-        self.ser.write(b'\x55\x01\x12\x00\x00\x00\x01\x69')
-        rospy.sleep(0.09)
-        self.ser.write(b'\x55\x01\x11\x00\x00\x00\x01\x68')
+            return False
+        fire_command = b'\x55\x01\x12\x00\x00\x00\x01\x69'
+        stop_command = b'\x55\x01\x11\x00\x00\x00\x01\x68'
+        try:
+            fire_written = self.ser.write(fire_command)
+            self.ser.flush()
+            rospy.sleep(0.09)
+            stop_written = self.ser.write(stop_command)
+            self.ser.flush()
+        except Exception as exc:
+            rospy.logerr("Shooter serial write failed: %s", str(exc))
+            return False
+        if fire_written != len(fire_command) or \
+                stop_written != len(stop_command):
+            rospy.logerr("Shooter short write: fire=%d/%d stop=%d/%d",
+                         fire_written, len(fire_command),
+                         stop_written, len(stop_command))
+            return False
+        rospy.loginfo("Shooter pulse sent: fire=%d stop=%d",
+                      fire_written, stop_written)
+        return True
 
     def _wait_for_shoot(self, flag_name, timeout=15.0):
         """Wait until shoot flag becomes False (callback-driven)"""
