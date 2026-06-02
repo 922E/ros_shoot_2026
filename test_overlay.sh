@@ -75,6 +75,37 @@ check_pkg "joint_state_publisher" "/opt/ros/melodic"
 check_pkg "robot_state_publisher" "/opt/ros/melodic"
 
 echo ""
+echo "[2b/5] 验证比赛 launch 文件..."
+
+check_launch() {
+    local pkg=$1
+    local launch_file=$2
+    local pkg_path=$(rospack find "$pkg" 2>/dev/null)
+    local launch_path="$pkg_path/launch/$launch_file"
+    if [ -z "$pkg_path" ]; then
+        echo "  [FAIL] $pkg 找不到，无法检查 $launch_file"
+    elif [ -f "$launch_path" ]; then
+        echo "  [OK] $launch_path"
+    else
+        echo "  [FAIL] $launch_path 不存在"
+    fi
+}
+
+check_launch "abot_bringup" "robot_with_imu.launch"
+check_launch "robot_slam" "navigation_freeze.launch"
+check_launch "track_tag" "usb_cam_with_calibration.launch"
+check_launch "track_tag" "ar_track_camera.launch"
+check_launch "find_object_2d" "find_object_2d_shoot.launch"
+check_launch "robot_slam" "competition_2026.launch"
+
+if grep -q "abot_bringup shoot.launch" \
+        "/home/abot/freeze_ros/ros_shoot_2026/competition_start.sh"; then
+    echo "  [FAIL] competition_start.sh 仍会启动旧 shoot.launch，请更新脚本"
+else
+    echo "  [OK] competition_start.sh 未启动旧 shoot.launch"
+fi
+
+echo ""
 echo "[3/5] 检查 Python 依赖..."
 
 # TTS_audio 需要 websockets
