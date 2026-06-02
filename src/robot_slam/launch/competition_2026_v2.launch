@@ -1,0 +1,40 @@
+<launch>
+  <!--
+  2026 射击挑战赛 - v2 快速主控
+  前提: 底盘、导航定位、摄像头、AR 标签检测、模板匹配已启动
+  -->
+
+  <arg name="route_config" default="$(find robot_slam)/config/competition_2026_route.yaml"/>
+  <arg name="enable_voice_asr" default="true"/>
+  <arg name="voice_required" default="true"/>
+  <arg name="allow_default_target_ids" default="false"/>
+  <arg name="require_wakeup_word" default="true"/>
+  <arg name="voice_wait_timeout" default="18.0"/>
+  <arg name="voice_retry_limit" default="2"/>
+
+  <!-- 语音识别: audio_topic -> chinese_topic -->
+  <node if="$(arg enable_voice_asr)" name="voice_asr_2026"
+        pkg="robot_slam" type="2026_shoot_demo.py"
+        output="screen"/>
+
+  <!-- v2 比赛主控 -->
+  <node name="competition_control_v2" pkg="robot_slam"
+        type="competition_control_v2.py"
+        output="screen" required="true">
+    <param name="route_config" value="$(arg route_config)"/>
+    <param name="voice_required" type="bool" value="$(arg voice_required)"/>
+    <param name="allow_default_target_ids" type="bool" value="$(arg allow_default_target_ids)"/>
+    <param name="require_wakeup_word" type="bool" value="$(arg require_wakeup_word)"/>
+    <param name="voice_wait_timeout" type="double" value="$(arg voice_wait_timeout)"/>
+    <param name="voice_retry_limit" type="int" value="$(arg voice_retry_limit)"/>
+  </node>
+
+  <!-- 比赛监控 -->
+  <node name="competition_monitor" pkg="robot_slam" type="competition_monitor.py"
+        output="screen">
+    <param name="total_time" value="120.0"/>
+    <param name="start_motion_timeout" value="30.0"/>
+    <param name="stuck_timeout" value="20.0"/>
+    <param name="field_half_size" value="1.8"/>
+  </node>
+</launch>
