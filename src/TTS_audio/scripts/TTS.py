@@ -13,6 +13,7 @@ import json  # JSON处理
 import gzip  # 数据压缩
 import copy  # 深拷贝
 import os
+import shlex
 from TTS_audio.srv import StringService, StringServiceResponse
 
 # 消息类型映射
@@ -88,8 +89,10 @@ async def send_tts_request(text):
     """
     # 复制请求模板并填充数据
     submit_request_json = copy.deepcopy(request_json)
-    submit_request_json["request"]["reqid"] = str(uuid.uuid4())  # 生成唯一请求ID
+    reqid = str(uuid.uuid4())
+    submit_request_json["request"]["reqid"] = reqid  # 生成唯一请求ID
     submit_request_json["request"]["text"] = text  # 设置待合成文本
+    output_path = os.path.join("/tmp", f"tts_audio_{reqid}.mp3")
 
     # 将JSON序列化为字节并压缩
     payload_bytes = str.encode(json.dumps(submit_request_json))
@@ -106,14 +109,14 @@ async def send_tts_request(text):
     # 连接到WebSocket服务器并发送请求
     async with websockets.connect(api_url, extra_headers=header, ping_interval=None) as ws:
         await ws.send(full_client_request)  # 发送请求
-        file_to_save = open("output.mp3", "wb")  # 打开文件以保存音频
+        file_to_save = open(output_path, "wb")  # 打开文件以保存音频
         while True:
             res = await ws.recv()  # 接收服务器响应
             done = parse_response(res, file_to_save)  # 解析响应
             if done:
                 file_to_save.close()  # 关闭文件
                 break
-        return "output.mp3"  # 返回保存的音频文件路径
+        return output_path  # 返回保存的音频文件路径
 
 def parse_response(res, file):
     """
@@ -167,7 +170,7 @@ def handle_tts_request(req):
         
         # 播放生成的音频
         rospy.loginfo(f"音频保存至: {audio_path}")
-        os.system(f'mplayer {audio_path}')  # 确保系统安装了mplayer
+        os.system(f'mplayer {shlex.quote(audio_path)}')  # 确保系统安装了mplayer
         return StringServiceResponse("TTS处理完成")
     except Exception as e:
         rospy.logerr(f"TTS处理出错: {str(e)}")
