@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/abot/anaconda3/envs/py39/bin/python
 '''
 Copyright (c) [Zachary]
 本代码受版权法保护，未经授权禁止任何形式的复制、分发、修改等使用行为。

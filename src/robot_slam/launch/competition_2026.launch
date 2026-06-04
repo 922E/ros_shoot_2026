@@ -9,6 +9,12 @@
   <arg name="route_config" default="$(find robot_slam)/config/competition_2026_route.yaml"/>
   <arg name="enable_voice" default="true"/>
   <arg name="voice_required" default="true"/>
+  <arg name="enable_tts" default="true"/>
+
+  <!-- TTS service: tts_service -->
+  <node if="$(arg enable_tts)" name="tts_server_2026"
+        pkg="TTS_audio" type="TTS.py"
+        output="screen"/>
 
   <!-- 语音链路: audio_topic -> chinese_topic -> target_id_rotating/moving -->
   <node if="$(arg enable_voice)" name="voice_asr_2026"
