@@ -13,7 +13,7 @@ import json  # JSON处理
 import gzip  # 数据压缩
 import copy  # 深拷贝
 import os
-import shlex
+import subprocess
 from TTS_audio.srv import StringService, StringServiceResponse
 
 # 消息类型映射
@@ -150,6 +150,7 @@ def parse_response(res, file):
         else:
             return False
     elif message_type == 0xf:  # 错误消息
+        rospy.logerr(f"TTS服务器错误响应: {payload}")
         return True
     elif message_type == 0xc:  # 前端服务器响应
         return False
@@ -170,7 +171,14 @@ def handle_tts_request(req):
         
         # 播放生成的音频
         rospy.loginfo(f"音频保存至: {audio_path}")
-        os.system(f'mplayer {shlex.quote(audio_path)}')  # 确保系统安装了mplayer
+        size = os.path.getsize(audio_path)
+        rospy.loginfo(f"音频文件大小: {size} bytes")
+        if size <= 0:
+            raise RuntimeError("TTS生成了空音频文件")
+        play_rc = subprocess.call(["mplayer", audio_path])
+        rospy.loginfo(f"mplayer返回码: {play_rc}")
+        if play_rc != 0:
+            return StringServiceResponse(f"TTS生成成功但播放失败: {audio_path}")
         return StringServiceResponse("TTS处理完成")
     except Exception as e:
         rospy.logerr(f"TTS处理出错: {str(e)}")
