@@ -79,7 +79,7 @@ route_points:
       yaw: 0.0
 
 target_ids:
-  circular: 34
+  circular: 35
   rotating: 1
   moving: 6
 
@@ -89,6 +89,7 @@ global:
   task_timeout: 60.0
   shoot_timeout: 15.0
   shoot_cooldown: 2.0
+  voice_wait_timeout: 18.0
   circular_search_wz: 0.18
   rotating_x_threshold: 0.14
   rotating_y_min: -0.78

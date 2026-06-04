@@ -84,6 +84,7 @@ class CompetitionControl:
         self.rotating_stable_frames = 0
         self.moving_stable_frames = 0
         self.last_shoot_ok = None
+        self.voice_required = rospy.get_param('~voice_required', True)
 
         # Publishers (match shoot_2025.py)
         self.set_pose_pub = rospy.Publisher('/initialpose',
@@ -804,13 +805,9 @@ class CompetitionControl:
             self.set_pose(sp['x'], sp['y'], sp.get('yaw', 0.0))
             rospy.loginfo("Initial pose set: (%.3f, %.3f)",
                           sp['x'], sp['y'])
-        # Apply YAML default IDs if voice is not running
-        if target_id_rotating is None:
-            target_id_rotating = self.target_ids.get('rotating', None)
-        if target_id_moving is None:
-            target_id_moving = self.target_ids.get('moving', None)
-        rospy.loginfo("IDs - rotating:%s moving:%s",
-                      target_id_rotating, target_id_moving)
+        target_id_rotating = None
+        target_id_moving = None
+        rospy.loginfo("IDs reset, waiting for voice command")
         rospy.loginfo("Place robot at start mark, press Enter")
         raw_input("Press Enter to start competition: ")
         self.state = 'VOICE_RECV'
@@ -818,20 +815,42 @@ class CompetitionControl:
 
     def _handle_voice_recv(self):
         global target_id_rotating, target_id_moving
+        if not self.voice_required:
+            target_id_rotating = self.target_ids.get('rotating', None)
+            target_id_moving = self.target_ids.get('moving', None)
+            rospy.logwarn("Voice disabled explicitly, using YAML IDs: rotating=%s moving=%s",
+                          target_id_rotating, target_id_moving)
+            if target_id_rotating is None or target_id_moving is None:
+                rospy.logerr("YAML IDs incomplete, stop before route")
+                self.state = 'FINISH'
+                return
+            self.state = 'NAV_LOOP'
+            self.current_point_index = 0
+            rospy.loginfo("NAV_LOOP: %d points", len(self.route_points))
+            return
+
         self._trigger_voice()
 
-        # Skip 18s voice wait if IDs already known from YAML config
-        if target_id_rotating is not None and target_id_moving is not None:
-            rospy.loginfo("IDs already known (rotating=%s moving=%s), skip voice wait",
-                          target_id_rotating, target_id_moving)
-        else:
-            rospy.sleep(18)
+        timeout = self.global_params.get('voice_wait_timeout', 18.0)
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            if target_id_rotating is not None and target_id_moving is not None:
+                rospy.loginfo("Voice IDs received: rotating=%s moving=%s",
+                              target_id_rotating, target_id_moving)
+                break
+            if (rospy.Time.now() - start).to_sec() > timeout:
+                rospy.logerr("Voice wait timeout, stop before route")
+                self.state = 'FINISH'
+                break
+            rate.sleep()
 
-        # Use YAML defaults if voice didn't update IDs
-        if target_id_rotating is None:
-            target_id_rotating = self.target_ids.get('rotating', None)
-        if target_id_moving is None:
-            target_id_moving = self.target_ids.get('moving', None)
+        if target_id_rotating is None or target_id_moving is None:
+            rospy.logerr("Voice IDs incomplete: rotating=%s moving=%s",
+                         target_id_rotating, target_id_moving)
+            self.state = 'FINISH'
+            return
+
         rospy.loginfo("IDs - rotating:%s moving:%s",
                       target_id_rotating, target_id_moving)
         self.state = 'NAV_LOOP'

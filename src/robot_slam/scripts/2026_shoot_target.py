@@ -1,11 +1,14 @@
-#!/usr/bin/env python3
+#!/home/abot/anaconda3/envs/py39/bin/python
 # -*- coding: utf-8 -*-
 
 import rospy
 from std_msgs.msg import String, Int32
 
 # 导入TTS服务客户端
-from TTS_audio.srv import StringService
+try:
+    from TTS_audio.srv import StringService
+except Exception:
+    StringService = None
 
 target_id_rotating = None
 target_id_moving = None
@@ -33,6 +36,9 @@ def call_tts(text):
     调用TTS服务播报语音
     """
     global tts_client
+    if tts_client is None:
+        rospy.logwarn("[TTS] 服务不可用，跳过播报: %s", text)
+        return
     try:
         rospy.wait_for_service('tts_service', timeout=2)
         response = tts_client(text)
@@ -88,8 +94,12 @@ def chinese_subscriber():
     global arrive_pub, target_id_rotating_pub, target_id_moving_pub, tts_client
     rospy.init_node('chinese_subscriber', anonymous=True)
 
-    # 初始化TTS服务客户端
-    tts_client = rospy.ServiceProxy('tts_service', StringService)
+    # 初始化TTS服务客户端；TTS 不可用时不影响 target_id 发布。
+    if StringService is not None:
+        tts_client = rospy.ServiceProxy('tts_service', StringService)
+    else:
+        tts_client = None
+        rospy.logwarn("TTS_audio/StringService not found, TTS disabled")
 
     # 创建发布者
     arrive_pub = rospy.Publisher('/voiceWords', String, queue_size=10)
