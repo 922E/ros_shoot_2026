@@ -14,11 +14,6 @@ from std_msgs.msg import String, Int32
 from math import pi
 import tf
 
-try:
-    from TTS_audio.srv import StringService
-except Exception:
-    StringService = None
-
 
 def _safe(s):
     """Safe str for Python 2: encode unicode to utf-8 bytes"""
@@ -90,11 +85,6 @@ class CompetitionControl:
         self.moving_stable_frames = 0
         self.last_shoot_ok = None
         self.voice_required = rospy.get_param('~voice_required', True)
-        self.tts_client = None
-        if StringService is not None:
-            self.tts_client = rospy.ServiceProxy('tts_service', StringService)
-        else:
-            rospy.logwarn("TTS_audio/StringService not found, TTS disabled")
 
         # Publishers (match shoot_2025.py)
         self.set_pose_pub = rospy.Publisher('/initialpose',
@@ -788,20 +778,6 @@ class CompetitionControl:
             self.audio_pub.publish(String("start_recognition"))
             rate.sleep()
 
-    def _speak(self, text, wait_timeout=0.8):
-        """Best-effort TTS. Never block or fail the competition flow."""
-        self.arrive_pub.publish(String(_safe(text)))
-        if self.tts_client is None:
-            return False
-        try:
-            rospy.wait_for_service('tts_service', timeout=wait_timeout)
-            response = self.tts_client(_safe(text))
-            rospy.loginfo("[TTS] %s", _safe(response.result))
-            return True
-        except Exception as exc:
-            rospy.logwarn("[TTS] skip '%s': %s", _safe(text), str(exc))
-            return False
-
     # ===================== State Machine =====================
 
     def run(self):
@@ -834,7 +810,6 @@ class CompetitionControl:
         rospy.loginfo("IDs reset, waiting for voice command")
         rospy.loginfo("Place robot at start mark, press Enter")
         raw_input("Press Enter to start competition: ")
-        self._speak(u"比赛开始")
         self.state = 'VOICE_RECV'
         rospy.loginfo("Competition started!")
 
@@ -1057,7 +1032,6 @@ class CompetitionControl:
 
     def _handle_finish(self):
         rospy.loginfo("========== COMPETITION FINISHED! ==========")
-        self._speak(u"比赛结束")
         self.cancel()
         self.pub.publish(Twist())
 
