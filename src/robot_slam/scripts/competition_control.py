@@ -772,11 +772,19 @@ class CompetitionControl:
     # ===================== Voice trigger =====================
 
     def _trigger_voice(self):
-        rospy.loginfo("Triggering voice recognition...")
-        rate = rospy.Rate(1)
-        for _ in range(2):
-            self.audio_pub.publish(String("start_recognition"))
+        wait_timeout = self.global_params.get('voice_ready_timeout', 10.0)
+        start = rospy.Time.now()
+        rate = rospy.Rate(10)
+        while (self.audio_pub.get_num_connections() == 0 and
+               not rospy.is_shutdown()):
+            if (rospy.Time.now() - start).to_sec() > wait_timeout:
+                rospy.logerr("Voice node not ready after %.1fs", wait_timeout)
+                return False
             rate.sleep()
+
+        rospy.loginfo("Triggering voice recognition once")
+        self.audio_pub.publish(String("start_recognition"))
+        return True
 
     # ===================== State Machine =====================
 
@@ -829,7 +837,9 @@ class CompetitionControl:
             rospy.loginfo("NAV_LOOP: %d points", len(self.route_points))
             return
 
-        self._trigger_voice()
+        if not self._trigger_voice():
+            self.state = 'FINISH'
+            return
 
         timeout = self.global_params.get('voice_wait_timeout', 18.0)
         start = rospy.Time.now()

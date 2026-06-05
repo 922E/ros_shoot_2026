@@ -10,12 +10,9 @@
   <arg name="enable_voice" default="true"/>
   <arg name="voice_required" default="true"/>
 
-  <!-- 语音链路: audio_topic -> chinese_topic -> target_id_rotating/moving -->
-  <node if="$(arg enable_voice)" name="voice_asr_2026"
-        pkg="robot_slam" type="2026_shoot_demo.py"
-        output="screen"/>
-  <node if="$(arg enable_voice)" name="voice_target_parser_2026"
-        pkg="robot_slam" type="2026_shoot_target.py"
+  <!-- 合并语音链路: audio_topic -> ASR/ID解析 -> target_id_rotating/moving -->
+  <node if="$(arg enable_voice)" name="shoot_2026_voice"
+        pkg="robot_slam" type="shoot_2026_voice.py"
         output="screen"/>
 
   <!-- 比赛主控 -->
