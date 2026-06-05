@@ -25,7 +25,9 @@ class Shoot2026Voice(object):
         self.wav_path = os.path.join(script_dir, 'test.wav')
         self.start_music_path = os.path.join(script_dir, '比赛开始.mp3')
         self.prompt_music_path = os.path.join(script_dir, '提示音.mp3')
+        rospy.loginfo('loading FunASR model: %s', self.model_dir)
         self.model = AutoModel(model=self.model_dir, disable_update=True)
+        rospy.loginfo('FunASR model loaded')
 
         self.chinese_pub = rospy.Publisher('chinese_topic', String,
                                            queue_size=10)

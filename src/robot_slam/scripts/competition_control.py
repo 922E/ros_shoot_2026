@@ -772,7 +772,8 @@ class CompetitionControl:
     # ===================== Voice trigger =====================
 
     def _trigger_voice(self):
-        wait_timeout = self.global_params.get('voice_ready_timeout', 10.0)
+        wait_timeout = self.global_params.get('voice_ready_timeout', 60.0)
+        rospy.loginfo("Waiting for voice node, timeout=%.1fs", wait_timeout)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
         while (self.audio_pub.get_num_connections() == 0 and
