@@ -13,7 +13,7 @@ route_points:
     type: "task"
     target_type: "circular"
     x: 1.1
-    y: -0.504
+    y: -0.404
     yaw: 0.0
 
   # ── 后退1: 退回安全 x 走廊 ──
@@ -62,7 +62,7 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
-    x: 1.20
+    x: 1.15
     y: -2.977
     yaw: 0.0
 
