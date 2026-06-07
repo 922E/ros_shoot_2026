@@ -12,7 +12,7 @@ route_points:
     name: "射击点1-环形靶"
     type: "task"
     target_type: "circular"
-    x: 1.165
+    x: 1.0
     y: -0.504
     yaw: 0.0
 
@@ -20,7 +20,7 @@ route_points:
   - id: 2
     name: "后退1"
     type: "back_y_only"
-    x: 0.200
+    x: 0.150
     y: -0.554
     yaw: 0.0
 
@@ -28,7 +28,7 @@ route_points:
   - id: 3
     name: "途经安全点1"
     type: "relay"
-    x: 0.200
+    x: 0.150
     y: -1.464
     yaw: 0.0
 
@@ -37,7 +37,7 @@ route_points:
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
-    x: 1.170
+    x: 1.000
     y: -1.756
     yaw: 0.0
 
@@ -45,7 +45,7 @@ route_points:
   - id: 5
     name: "后退2"
     type: "back_y_only"
-    x: 0.200
+    x: 0.150
     y: -2.06
     yaw: 0.0
 
@@ -53,7 +53,7 @@ route_points:
   - id: 6
     name: "途经安全点2"
     type: "relay"
-    x: 0.200
+    x: 0.150
     y: -2.71
     yaw: 0.0
 
@@ -62,7 +62,7 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
-    x: 1.176
+    x: 1.00
     y: -2.977
     yaw: 0.0
 
