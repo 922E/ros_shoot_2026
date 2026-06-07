@@ -78,28 +78,17 @@ route_points:
       y: -2.90
       yaw: 0.0
 
-target_ids:
-  circular: 52
-  rotating: 1
-  moving: 6
-
 global:
   relay_close_threshold: 0.25
   end_close_threshold: 0.08
   task_timeout: 60.0
-  shoot_timeout: 15.0
-  shoot_cooldown: 2.0
+  # Predictive rotating gate needs up to half a 26s cycle plus observe/turn.
+  shoot_timeout: 22.0
   voice_ready_timeout: 60.0
   voice_wait_timeout: 18.0
-  circular_search_wz: 0.18
-  rotating_x_threshold: 0.14
-  rotating_y_min: -0.78
-  rotating_y_max: -0.69
-  rotating_stable_frames_required: 1
-  rotating_kp_far: 0.55
-  rotating_kp_near: 0.35
-  rotating_max_wz: 0.30
-  rotating_min_wz: 0.04
+
+# 射击瞄准参数集中在 competition_control.py 顶部的
+# "Shooting Manual Tuning" 区域，避免 Python/YAML 两处参数冲突。
 
 field:
   size: 3.6

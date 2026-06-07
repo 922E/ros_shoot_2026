@@ -7,11 +7,9 @@
   -->
 
   <arg name="route_config" default="$(find robot_slam)/config/competition_2026_route.yaml"/>
-  <arg name="enable_voice" default="true"/>
-  <arg name="voice_required" default="true"/>
 
   <!-- 合并语音链路: audio_topic -> ASR/ID解析 -> target_id_rotating/moving -->
-  <node if="$(arg enable_voice)" name="shoot_2026_voice"
+  <node name="shoot_2026_voice"
         pkg="robot_slam" type="shoot_2026_voice.py"
         output="screen"/>
 
@@ -19,7 +17,6 @@
   <node name="competition_control" pkg="robot_slam" type="competition_control.py"
         output="screen" required="true">
     <param name="route_config" value="$(arg route_config)"/>
-    <param name="voice_required" type="bool" value="$(arg voice_required)"/>
   </node>
 
   <!-- 比赛监控 -->
