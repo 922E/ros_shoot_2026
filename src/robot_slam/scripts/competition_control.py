@@ -771,9 +771,10 @@ class CompetitionControl:
 
     # ===================== Voice trigger =====================
 
-    def _trigger_voice(self):
+    def _wait_for_voice_ready(self):
         wait_timeout = self.global_params.get('voice_ready_timeout', 60.0)
-        rospy.loginfo("Waiting for voice node, timeout=%.1fs", wait_timeout)
+        rospy.loginfo("Loading voice model, waiting for voice node (timeout=%.1fs)",
+                      wait_timeout)
         start = rospy.Time.now()
         rate = rospy.Rate(10)
         while (self.audio_pub.get_num_connections() == 0 and
@@ -783,6 +784,13 @@ class CompetitionControl:
                 return False
             rate.sleep()
 
+        rospy.loginfo("Voice model ready")
+        return True
+
+    def _trigger_voice(self):
+        if self.audio_pub.get_num_connections() == 0:
+            rospy.logerr("Voice node disconnected before recognition trigger")
+            return False
         rospy.loginfo("Triggering voice recognition once")
         self.audio_pub.publish(String("start_recognition"))
         return True
@@ -817,6 +825,11 @@ class CompetitionControl:
         target_id_rotating = None
         target_id_moving = None
         rospy.loginfo("IDs reset, waiting for voice command")
+
+        if self.voice_required and not self._wait_for_voice_ready():
+            self.state = 'FINISH'
+            return
+
         rospy.loginfo("Place robot at start mark, press Enter")
         raw_input("Press Enter to start competition: ")
         self.state = 'VOICE_RECV'
