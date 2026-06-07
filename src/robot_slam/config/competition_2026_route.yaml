@@ -12,7 +12,7 @@ route_points:
     name: "射击点1-环形靶"
     type: "task"
     target_type: "circular"
-    x: 1.0
+    x: 1.1
     y: -0.504
     yaw: 0.0
 
@@ -37,11 +37,11 @@ route_points:
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
-    x: 1.000
-    y: -1.756
+    x: 1.100
+    y: -1.656
     yaw: 0.0
 
-  # ── 后退2: 退回安全 x 走廊 ──
+  # ── 后退2:退回安全 x 走廊 ──
   - id: 5
     name: "后退2"
     type: "back_y_only"
@@ -62,7 +62,7 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
-    x: 1.00
+    x: 1.20
     y: -2.977
     yaw: 0.0
 
