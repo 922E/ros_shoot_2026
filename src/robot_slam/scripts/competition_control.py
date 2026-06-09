@@ -79,8 +79,8 @@ CIRCULAR_VISION_TARGET_ID = 52
 CIRCULAR_AIM_CENTER_X = 320.0
 CIRCULAR_FIRE_THRESHOLD_PX = 5.0 #5.0
 CIRCULAR_STABLE_FRAMES_REQUIRED = 1
-CIRCULAR_KP_FAR = 0.05 #0.05
-CIRCULAR_KP_NEAR = 0.012
+CIRCULAR_KP_FAR = 0.03 #0.05
+CIRCULAR_KP_NEAR = 0.010
 CIRCULAR_NEAR_THRESHOLD_PX = 40.0
 CIRCULAR_MAX_WZ = 0.65
 CIRCULAR_MIN_WZ = 0.08
@@ -114,8 +114,8 @@ ROTATING_GATE_YAW_TOL_DEG = 2.0
 ROTATING_GATE_TURN_KP = 1.0
 ROTATING_GATE_MAX_WZ = 0.35
 ROTATING_GATE_MIN_WZ = 0.06
-ROTATING_GATE_FIRE_X_THRESHOLD = 0.14
-ROTATING_GATE_STABLE_FRAMES_REQUIRED = 2
+ROTATING_GATE_FIRE_X_THRESHOLD = 0.08
+ROTATING_GATE_STABLE_FRAMES_REQUIRED = 1
 ROTATING_GATE_MISS_X_THRESHOLD = 0.24
 ROTATING_GATE_MISS_MIN_DX = 0.010
 ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN = 0.35
@@ -290,12 +290,15 @@ class CompetitionControl:
         else:
             self.circular_stable_frames += 1
             self.pub.publish(Twist())
-            rospy.loginfo("Circular target stable frames: %d/%d",
+            rospy.loginfo("Circular target stable frames: %d/%d x=%.1f offset_x=%.1f",
                           self.circular_stable_frames,
-                          CIRCULAR_STABLE_FRAMES_REQUIRED)
+                          CIRCULAR_STABLE_FRAMES_REQUIRED,
+                          data.x, offset_x)
             if self.circular_stable_frames < \
                     CIRCULAR_STABLE_FRAMES_REQUIRED:
                 return
+            rospy.loginfo("Circular target FIRE x=%.1f offset_x=%.1f",
+                          data.x, offset_x)
             fire_ok = self._fire()
             self.last_shoot_ok = fire_ok
             if fire_ok:
@@ -350,12 +353,15 @@ class CompetitionControl:
                 elif y_ok:
                     self.rotating_stable_frames += 1
                     self.pub.publish(Twist())
-                    rospy.loginfo("Rotating target stable frames: %d/%d",
+                    rospy.loginfo("Rotating target stable frames: %d/%d x=%.3f y=%.3f",
                                   self.rotating_stable_frames,
-                                  ROTATING_STABLE_FRAMES_REQUIRED)
+                                  ROTATING_STABLE_FRAMES_REQUIRED,
+                                  ax, ay)
                     if self.rotating_stable_frames < \
                             ROTATING_STABLE_FRAMES_REQUIRED:
                         return
+                    rospy.loginfo("Rotating target FIRE x=%.3f y=%.3f",
+                                  ax, ay)
                     fire_ok = self._fire()
                     self.last_shoot_ok = fire_ok
                     rospy.sleep(ROTATING_SHOOT_COOLDOWN)
@@ -529,14 +535,16 @@ class CompetitionControl:
             return
 
         self.rotating_stable_frames += 1
-        rospy.loginfo("[ROTATING_GATE] stable %d/%d at %s",
+        rospy.loginfo("[ROTATING_GATE] stable %d/%d at %s x=%.3f y=%.3f",
                       self.rotating_stable_frames,
                       ROTATING_GATE_STABLE_FRAMES_REQUIRED,
-                      self.rotating_gate_side)
+                      self.rotating_gate_side, ax, ay)
         if self.rotating_stable_frames < \
                 ROTATING_GATE_STABLE_FRAMES_REQUIRED:
             return
 
+        rospy.loginfo("[ROTATING_GATE] FIRE at %s x=%.3f y=%.3f",
+                      self.rotating_gate_side, ax, ay)
         fire_ok = self._fire()
         self.last_shoot_ok = fire_ok
         rospy.sleep(ROTATING_SHOOT_COOLDOWN)
@@ -593,6 +601,7 @@ class CompetitionControl:
             if marker.id == target_id_moving:
                 found_target = True
                 ax = marker.pose.pose.position.x
+                ay = marker.pose.pose.position.y
                 abs_ax = abs(ax)
 
                 if abs_ax >= MOVING_X_THRESHOLD:
@@ -610,18 +619,21 @@ class CompetitionControl:
                     self.pub.publish(msg)
                     rospy.loginfo_throttle(
                         1.0,
-                        "Moving target aiming: id=%d x=%.3f wz=%.3f",
-                        marker.id, ax, angular_z)
+                        "Moving target aiming: id=%d x=%.3f y=%.3f wz=%.3f",
+                        marker.id, ax, ay, angular_z)
 
                 else:
                     self.moving_stable_frames += 1
                     self.pub.publish(Twist())
-                    rospy.loginfo("Moving target stable frames: %d/%d",
+                    rospy.loginfo("Moving target stable frames: %d/%d x=%.3f y=%.3f",
                                   self.moving_stable_frames,
-                                  MOVING_STABLE_FRAMES_REQUIRED)
+                                  MOVING_STABLE_FRAMES_REQUIRED,
+                                  ax, ay)
                     if self.moving_stable_frames < \
                             MOVING_STABLE_FRAMES_REQUIRED:
                         return
+                    rospy.loginfo("Moving target FIRE x=%.3f y=%.3f",
+                                  ax, ay)
                     fire_ok = self._fire()
                     self.last_shoot_ok = fire_ok
                     rospy.sleep(MOVING_SHOOT_COOLDOWN)
