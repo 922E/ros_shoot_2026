@@ -108,14 +108,18 @@ ROTATING_GATE_OBSERVE_SEC = 0.8
 ROTATING_GATE_MAX_OBSERVE_SEC = 2.0
 ROTATING_GATE_MIN_SAMPLES = 4
 ROTATING_GATE_MIN_X_DELTA = 0.015
-ROTATING_GATE_LEFT_YAW_OFFSET_DEG = 10.0
-ROTATING_GATE_RIGHT_YAW_OFFSET_DEG = -10.0
+ROTATING_GATE_LEFT_YAW_OFFSET_DEG = 6.0
+ROTATING_GATE_RIGHT_YAW_OFFSET_DEG = -6.0
 ROTATING_GATE_YAW_TOL_DEG = 2.0
 ROTATING_GATE_TURN_KP = 1.0
 ROTATING_GATE_MAX_WZ = 0.35
 ROTATING_GATE_MIN_WZ = 0.06
 ROTATING_GATE_FIRE_X_THRESHOLD = 0.14
 ROTATING_GATE_STABLE_FRAMES_REQUIRED = 2
+ROTATING_GATE_MISS_X_THRESHOLD = 0.24
+ROTATING_GATE_MISS_MIN_DX = 0.010
+ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN = 0.35
+ROTATING_GATE_MAX_REPLANS = 2
 
 # Moving target (/ar_pose_marker, x is marker coordinate)
 MOVING_X_THRESHOLD = 0.10
@@ -151,6 +155,10 @@ class CompetitionControl:
         self.rotating_gate_side = None
         self.rotating_gate_base_yaw_deg = 0.0
         self.rotating_gate_target_yaw = None
+        self.rotating_gate_wait_start = None
+        self.rotating_gate_last_x = None
+        self.rotating_gate_last_time = None
+        self.rotating_gate_replans = 0
         # Publishers (match shoot_2025.py)
         self.set_pose_pub = rospy.Publisher('/initialpose',
                                             PoseWithCovarianceStamped,
@@ -385,9 +393,55 @@ class CompetitionControl:
         self.rotating_gate_side = None
         self.rotating_gate_base_yaw_deg = task_yaw_deg
         self.rotating_gate_target_yaw = None
+        self.rotating_gate_wait_start = None
+        self.rotating_gate_last_x = None
+        self.rotating_gate_last_time = None
+        self.rotating_gate_replans = 0
         rospy.loginfo(
             "Rotating aim mode=%s base_yaw=%.1fdeg period=%.1fs",
             ROTATING_AIM_MODE, task_yaw_deg, ROTATING_PERIOD_SEC)
+
+    def _set_rotating_gate(self, side, reason, ax, x_delta):
+        """Select one fixed gate and enter the bounded turn phase."""
+        offset_deg = ROTATING_GATE_RIGHT_YAW_OFFSET_DEG \
+            if side == 'RIGHT' else ROTATING_GATE_LEFT_YAW_OFFSET_DEG
+        target_yaw_deg = self.rotating_gate_base_yaw_deg + offset_deg
+        self.rotating_gate_target_yaw = target_yaw_deg / 180.0 * pi
+        self.rotating_gate_side = side
+        self.rotating_gate_phase = 'TURN_GATE'
+        self.rotating_stable_frames = 0
+        self.rotating_gate_wait_start = None
+        self.rotating_gate_last_x = None
+        self.rotating_gate_last_time = None
+        rospy.loginfo(
+            "[ROTATING_GATE] %s next=%s x=%.3f dx=%.3f "
+            "target_yaw=%.1fdeg max_gate_wait~%.1fs",
+            reason, side, ax, x_delta, target_yaw_deg,
+            ROTATING_PERIOD_SEC / 2.0)
+
+    def _rotating_gate_missed(self, ax, now):
+        """Return True when the selected gate has just been passed."""
+        if self.rotating_gate_wait_start is None:
+            self.rotating_gate_wait_start = now
+
+        if self.rotating_gate_last_x is None:
+            self.rotating_gate_last_x = ax
+            self.rotating_gate_last_time = now
+            return False
+
+        elapsed = (now - self.rotating_gate_wait_start).to_sec()
+        dx = ax - self.rotating_gate_last_x
+        self.rotating_gate_last_x = ax
+        self.rotating_gate_last_time = now
+
+        if elapsed < ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN:
+            return False
+        if abs(ax) < ROTATING_GATE_MISS_X_THRESHOLD:
+            return False
+        if abs(dx) < ROTATING_GATE_MISS_MIN_DX:
+            return False
+
+        return (ax > 0.0 and dx > 0.0) or (ax < 0.0 and dx < 0.0)
 
     def _rotating_target_predictive_gate(self, data):
         """Predict the next 3/9 o'clock gate, turn to it, then wait."""
@@ -444,17 +498,7 @@ class CompetitionControl:
             else:
                 return
 
-            offset_deg = ROTATING_GATE_RIGHT_YAW_OFFSET_DEG \
-                if side == 'RIGHT' else ROTATING_GATE_LEFT_YAW_OFFSET_DEG
-            target_yaw_deg = self.rotating_gate_base_yaw_deg + offset_deg
-            self.rotating_gate_target_yaw = target_yaw_deg / 180.0 * pi
-            self.rotating_gate_side = side
-            self.rotating_gate_phase = 'TURN_GATE'
-            rospy.loginfo(
-                "[ROTATING_GATE] predicted next=%s x=%.3f dx=%.3f "
-                "target_yaw=%.1fdeg max_gate_wait~%.1fs",
-                side, ax, x_delta, target_yaw_deg,
-                ROTATING_PERIOD_SEC / 2.0)
+            self._set_rotating_gate(side, "predicted", ax, x_delta)
             return
 
         # WAIT_GATE: robot remains fixed. Fire only when the selected target
@@ -464,6 +508,20 @@ class CompetitionControl:
         y_ok = ROTATING_Y_MIN <= ay <= ROTATING_Y_MAX
         if not (x_ok and y_ok):
             self.rotating_stable_frames = 0
+            if self._rotating_gate_missed(ax, now):
+                if self.rotating_gate_replans < ROTATING_GATE_MAX_REPLANS:
+                    old_side = self.rotating_gate_side
+                    next_side = 'RIGHT' if old_side == 'LEFT' else 'LEFT'
+                    self.rotating_gate_replans += 1
+                    rospy.logwarn(
+                        "[ROTATING_GATE] missed %s window, replan %d/%d to %s",
+                        old_side, self.rotating_gate_replans,
+                        ROTATING_GATE_MAX_REPLANS, next_side)
+                    self._set_rotating_gate(next_side, "replanned", ax, 0.0)
+                    return
+                rospy.logwarn_throttle(
+                    1.0,
+                    "[ROTATING_GATE] missed window, replan limit reached")
             rospy.loginfo_throttle(
                 1.0,
                 "[ROTATING_GATE] wait %s id=%d x=%.3f y=%.3f x_ok=%s y_ok=%s",
@@ -501,6 +559,9 @@ class CompetitionControl:
         if abs(yaw_err) <= ROTATING_GATE_YAW_TOL_DEG / 180.0 * pi:
             self.pub.publish(Twist())
             self.rotating_gate_phase = 'WAIT_GATE'
+            self.rotating_gate_wait_start = rospy.Time.now()
+            self.rotating_gate_last_x = None
+            self.rotating_gate_last_time = None
             rospy.loginfo("[ROTATING_GATE] aimed at %s, waiting target",
                           self.rotating_gate_side)
             return
@@ -896,6 +957,10 @@ class CompetitionControl:
             self.rotating_gate_phase = 'IDLE'
             self.rotating_gate_samples = []
             self.rotating_gate_target_yaw = None
+            self.rotating_gate_wait_start = None
+            self.rotating_gate_last_x = None
+            self.rotating_gate_last_time = None
+            self.rotating_gate_replans = 0
         elif flag_name == 'moving':
             should_attack_moving = False
             self.moving_stable_frames = 0
