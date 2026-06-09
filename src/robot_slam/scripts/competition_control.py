@@ -77,13 +77,15 @@ SHOOT_FIRE_DURATION = 0.09
 # Circular target (/object_position, x is pixel coordinate)
 CIRCULAR_VISION_TARGET_ID = 52
 CIRCULAR_AIM_CENTER_X = 320.0
-CIRCULAR_FIRE_THRESHOLD_PX = 5.0 #5.0
+CIRCULAR_FIRE_THRESHOLD_PX = 5.0
+CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX = 25.0
+CIRCULAR_FALLBACK_SEC = 2.0
 CIRCULAR_STABLE_FRAMES_REQUIRED = 1
 CIRCULAR_KP_FAR = 0.03 #0.05
-CIRCULAR_KP_NEAR = 0.010
-CIRCULAR_NEAR_THRESHOLD_PX = 40.0
+CIRCULAR_KP_NEAR = 0.008
+CIRCULAR_NEAR_THRESHOLD_PX = 50.0
 CIRCULAR_MAX_WZ = 0.65
-CIRCULAR_MIN_WZ = 0.08
+CIRCULAR_MIN_WZ = 0.05
 CIRCULAR_SEARCH_WZ = 0.18
 
 # Rotating target (/ar_pose_marker, x/y are marker coordinates)
@@ -91,8 +93,8 @@ CIRCULAR_SEARCH_WZ = 0.18
 # "legacy_track": keep tracking the target ID until it reaches the center.
 ROTATING_AIM_MODE = "predictive_gate"
 ROTATING_X_THRESHOLD = 0.25  #0.25
-ROTATING_Y_MIN = -0.82
-ROTATING_Y_MAX = -0.55
+ROTATING_Y_MIN = -0.75
+ROTATING_Y_MAX = -0.25
 ROTATING_STABLE_FRAMES_REQUIRED = 1
 ROTATING_KP_FAR = 0.55
 ROTATING_KP_NEAR = 0.35
@@ -107,14 +109,14 @@ ROTATING_PERIOD_SEC = 26.0
 ROTATING_GATE_OBSERVE_SEC = 0.8
 ROTATING_GATE_MAX_OBSERVE_SEC = 2.0
 ROTATING_GATE_MIN_SAMPLES = 4
-ROTATING_GATE_MIN_X_DELTA = 0.015
+ROTATING_GATE_MIN_X_DELTA = 0.04
 ROTATING_GATE_LEFT_YAW_OFFSET_DEG = 6.0
 ROTATING_GATE_RIGHT_YAW_OFFSET_DEG = -6.0
 ROTATING_GATE_YAW_TOL_DEG = 2.0
 ROTATING_GATE_TURN_KP = 1.0
 ROTATING_GATE_MAX_WZ = 0.35
 ROTATING_GATE_MIN_WZ = 0.06
-ROTATING_GATE_FIRE_X_THRESHOLD = 0.08
+ROTATING_GATE_FIRE_X_THRESHOLD = 0.04
 ROTATING_GATE_STABLE_FRAMES_REQUIRED = 1
 ROTATING_GATE_MISS_X_THRESHOLD = 0.24
 ROTATING_GATE_MISS_MIN_DX = 0.010
@@ -122,14 +124,15 @@ ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN = 0.35
 ROTATING_GATE_MAX_REPLANS = 2
 
 # Moving target (/ar_pose_marker, x is marker coordinate)
-MOVING_X_THRESHOLD = 0.10
+MOVING_X_THRESHOLD = 0.06
 MOVING_STABLE_FRAMES_REQUIRED = 2
 MOVING_KP_FAR = 0.95
 MOVING_KP_NEAR = 0.70
 MOVING_NEAR_THRESHOLD = 0.18
 MOVING_MAX_WZ = 0.60
-MOVING_MIN_WZ = 0.08
+MOVING_MIN_WZ = 0.06
 MOVING_SHOOT_COOLDOWN = 0.10
+MOVING_AIM_BIAS_X = 0.00
 
 
 class CompetitionControl:
@@ -146,6 +149,7 @@ class CompetitionControl:
         self.state = 'WAIT_START'
         self.current_point_index = 0
         self.circular_stable_frames = 0
+        self.circular_aim_start = None
         self.rotating_stable_frames = 0
         self.moving_stable_frames = 0
         self.last_shoot_ok = None
@@ -250,6 +254,7 @@ class CompetitionControl:
 
         if not should_attack_circular:
             self.circular_stable_frames = 0
+            self.circular_aim_start = None
             return
         point_msg = data
 
@@ -267,8 +272,14 @@ class CompetitionControl:
 
         offset_x = data.x - CIRCULAR_AIM_CENTER_X
         abs_offset_x = abs(offset_x)
+        now = rospy.Time.now()
+        if self.circular_aim_start is None:
+            self.circular_aim_start = now
+        aim_elapsed = (now - self.circular_aim_start).to_sec()
+        fallback_ok = aim_elapsed >= CIRCULAR_FALLBACK_SEC and \
+            abs_offset_x <= CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX
 
-        if abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX:
+        if abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX and not fallback_ok:
             self.circular_stable_frames = 0
             kp = CIRCULAR_KP_NEAR if \
                 abs_offset_x <= CIRCULAR_NEAR_THRESHOLD_PX else \
@@ -284,21 +295,28 @@ class CompetitionControl:
             self.pub.publish(msg)
             rospy.loginfo_throttle(
                 1.0,
-                "Circular target aiming: id=%.0f offset_x=%.1f wz=%.3f",
-                data.z, offset_x, angular_z)
+                "Circular target aiming: id=%.0f offset_x=%.1f elapsed=%.1fs wz=%.3f",
+                data.z, offset_x, aim_elapsed, angular_z)
 
         else:
             self.circular_stable_frames += 1
             self.pub.publish(Twist())
-            rospy.loginfo("Circular target stable frames: %d/%d x=%.1f offset_x=%.1f",
-                          self.circular_stable_frames,
-                          CIRCULAR_STABLE_FRAMES_REQUIRED,
-                          data.x, offset_x)
-            if self.circular_stable_frames < \
+            if fallback_ok and abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX:
+                rospy.logwarn(
+                    "Circular target fallback stable: elapsed=%.1fs x=%.1f offset_x=%.1f threshold=%.1f",
+                    aim_elapsed, data.x, offset_x,
+                    CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX)
+            else:
+                rospy.loginfo(
+                    "Circular target stable frames: %d/%d x=%.1f offset_x=%.1f",
+                    self.circular_stable_frames,
+                    CIRCULAR_STABLE_FRAMES_REQUIRED,
+                    data.x, offset_x)
+            if not fallback_ok and self.circular_stable_frames < \
                     CIRCULAR_STABLE_FRAMES_REQUIRED:
                 return
-            rospy.loginfo("Circular target FIRE x=%.1f offset_x=%.1f",
-                          data.x, offset_x)
+            rospy.loginfo("Circular target FIRE x=%.1f offset_x=%.1f fallback=%s elapsed=%.1fs",
+                          data.x, offset_x, fallback_ok, aim_elapsed)
             fire_ok = self._fire()
             self.last_shoot_ok = fire_ok
             if fire_ok:
@@ -306,6 +324,7 @@ class CompetitionControl:
             else:
                 rospy.logerr("Circular target pulse failed")
             self.circular_stable_frames = 0
+            self.circular_aim_start = None
             should_attack_circular = False
 
     def rotating_target(self, data):
@@ -449,15 +468,29 @@ class CompetitionControl:
 
         return (ax > 0.0 and dx > 0.0) or (ax < 0.0 and dx < 0.0)
 
+    def _fire_rotating_gate(self, reason, ax, ay):
+        """Fire rotating target in predictive-gate mode."""
+        global should_attack_rotating
+        self.pub.publish(Twist())
+        rospy.loginfo("[ROTATING_GATE] FIRE %s at %s x=%.3f y=%.3f",
+                      reason, self.rotating_gate_side, ax, ay)
+        fire_ok = self._fire()
+        self.last_shoot_ok = fire_ok
+        rospy.sleep(ROTATING_SHOOT_COOLDOWN)
+        self.rotating_stable_frames = 0
+        should_attack_rotating = False
+        if fire_ok:
+            rospy.loginfo("[ROTATING_GATE] pulse sent at %s",
+                          self.rotating_gate_side)
+        else:
+            rospy.logerr("[ROTATING_GATE] pulse failed at %s",
+                         self.rotating_gate_side)
+
     def _rotating_target_predictive_gate(self, data):
         """Predict the next 3/9 o'clock gate, turn to it, then wait."""
         global target_id_rotating, should_attack_rotating
 
         if not should_attack_rotating:
-            return
-
-        if self.rotating_gate_phase == 'TURN_GATE':
-            self._command_rotating_gate_turn()
             return
 
         marker = None
@@ -468,6 +501,14 @@ class CompetitionControl:
 
         if marker is None:
             self.rotating_stable_frames = 0
+            if self.rotating_gate_phase == 'TURN_GATE':
+                self._command_rotating_gate_turn()
+                rospy.logwarn_throttle(
+                    1.0,
+                    "[ROTATING_GATE] turning without marker id=%s visible=%s",
+                    str(target_id_rotating),
+                    str([candidate.id for candidate in data.markers]))
+                return
             self.pub.publish(Twist())
             rospy.logwarn_throttle(
                 1.0,
@@ -479,6 +520,19 @@ class CompetitionControl:
         ax = marker.pose.pose.position.x
         ay = marker.pose.pose.position.y
         now = rospy.Time.now()
+        x_ok = abs(ax) <= ROTATING_GATE_FIRE_X_THRESHOLD
+        y_ok = ROTATING_Y_MIN <= ay <= ROTATING_Y_MAX
+
+        if self.rotating_gate_phase == 'TURN_GATE':
+            if x_ok and y_ok:
+                self._fire_rotating_gate("during_turn", ax, ay)
+                return
+            self._command_rotating_gate_turn()
+            rospy.loginfo_throttle(
+                1.0,
+                "[ROTATING_GATE] turn-check %s id=%d x=%.3f y=%.3f x_ok=%s y_ok=%s",
+                self.rotating_gate_side, marker.id, ax, ay, x_ok, y_ok)
+            return
 
         if self.rotating_gate_phase in ('IDLE', 'OBSERVE'):
             self.pub.publish(Twist())
@@ -510,8 +564,6 @@ class CompetitionControl:
         # WAIT_GATE: robot remains fixed. Fire only when the selected target
         # reaches the crosshair and the original vertical/depth window.
         self.pub.publish(Twist())
-        x_ok = abs(ax) <= ROTATING_GATE_FIRE_X_THRESHOLD
-        y_ok = ROTATING_Y_MIN <= ay <= ROTATING_Y_MAX
         if not (x_ok and y_ok):
             self.rotating_stable_frames = 0
             if self._rotating_gate_missed(ax, now):
@@ -543,19 +595,7 @@ class CompetitionControl:
                 ROTATING_GATE_STABLE_FRAMES_REQUIRED:
             return
 
-        rospy.loginfo("[ROTATING_GATE] FIRE at %s x=%.3f y=%.3f",
-                      self.rotating_gate_side, ax, ay)
-        fire_ok = self._fire()
-        self.last_shoot_ok = fire_ok
-        rospy.sleep(ROTATING_SHOOT_COOLDOWN)
-        self.rotating_stable_frames = 0
-        should_attack_rotating = False
-        if fire_ok:
-            rospy.loginfo("[ROTATING_GATE] pulse sent at %s",
-                          self.rotating_gate_side)
-        else:
-            rospy.logerr("[ROTATING_GATE] pulse failed at %s",
-                         self.rotating_gate_side)
+        self._fire_rotating_gate("wait_gate", ax, ay)
 
     def _command_rotating_gate_turn(self):
         """Turn toward the selected gate using TF, even if marker is hidden."""
@@ -602,13 +642,14 @@ class CompetitionControl:
                 found_target = True
                 ax = marker.pose.pose.position.x
                 ay = marker.pose.pose.position.y
-                abs_ax = abs(ax)
+                aim_x = ax - MOVING_AIM_BIAS_X
+                abs_ax = abs(aim_x)
 
                 if abs_ax >= MOVING_X_THRESHOLD:
                     self.moving_stable_frames = 0
                     kp = MOVING_KP_NEAR if \
                         abs_ax <= MOVING_NEAR_THRESHOLD else MOVING_KP_FAR
-                    angular_z = -kp * ax
+                    angular_z = -kp * aim_x
                     angular_z = max(-MOVING_MAX_WZ,
                                     min(MOVING_MAX_WZ, angular_z))
                     if abs(angular_z) < MOVING_MIN_WZ:
@@ -619,21 +660,22 @@ class CompetitionControl:
                     self.pub.publish(msg)
                     rospy.loginfo_throttle(
                         1.0,
-                        "Moving target aiming: id=%d x=%.3f y=%.3f wz=%.3f",
-                        marker.id, ax, ay, angular_z)
+                        "Moving target aiming: id=%d x=%.3f aim_x=%.3f y=%.3f bias=%.3f wz=%.3f",
+                        marker.id, ax, aim_x, ay, MOVING_AIM_BIAS_X,
+                        angular_z)
 
                 else:
                     self.moving_stable_frames += 1
                     self.pub.publish(Twist())
-                    rospy.loginfo("Moving target stable frames: %d/%d x=%.3f y=%.3f",
+                    rospy.loginfo("Moving target stable frames: %d/%d x=%.3f aim_x=%.3f y=%.3f bias=%.3f",
                                   self.moving_stable_frames,
                                   MOVING_STABLE_FRAMES_REQUIRED,
-                                  ax, ay)
+                                  ax, aim_x, ay, MOVING_AIM_BIAS_X)
                     if self.moving_stable_frames < \
                             MOVING_STABLE_FRAMES_REQUIRED:
                         return
-                    rospy.loginfo("Moving target FIRE x=%.3f y=%.3f",
-                                  ax, ay)
+                    rospy.loginfo("Moving target FIRE x=%.3f aim_x=%.3f y=%.3f bias=%.3f",
+                                  ax, aim_x, ay, MOVING_AIM_BIAS_X)
                     fire_ok = self._fire()
                     self.last_shoot_ok = fire_ok
                     rospy.sleep(MOVING_SHOOT_COOLDOWN)
@@ -963,6 +1005,7 @@ class CompetitionControl:
         if flag_name == 'circular':
             should_attack_circular = False
             self.circular_stable_frames = 0
+            self.circular_aim_start = None
         elif flag_name == 'rotating':
             should_attack_rotating = False
             self.rotating_stable_frames = 0
@@ -1278,6 +1321,7 @@ class CompetitionControl:
                 elif target_type == 'circular':
                     global should_attack_circular
                     self.last_shoot_ok = None
+                    self.circular_aim_start = None
                     should_attack_circular = True
                     shoot_ok = self._wait_for_shoot('circular',
                         self.global_params.get('shoot_timeout', 15.0))
