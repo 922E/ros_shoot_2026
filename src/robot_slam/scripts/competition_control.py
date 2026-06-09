@@ -77,9 +77,9 @@ SHOOT_FIRE_DURATION = 0.09
 # Circular target (/object_position, x is pixel coordinate)
 CIRCULAR_VISION_TARGET_ID = 52
 CIRCULAR_AIM_CENTER_X = 320.0
-CIRCULAR_FIRE_THRESHOLD_PX = 10.0
+CIRCULAR_FIRE_THRESHOLD_PX = 5.0 #5.0
 CIRCULAR_STABLE_FRAMES_REQUIRED = 1
-CIRCULAR_KP_FAR = 0.02
+CIRCULAR_KP_FAR = 0.05 #0.05
 CIRCULAR_KP_NEAR = 0.012
 CIRCULAR_NEAR_THRESHOLD_PX = 40.0
 CIRCULAR_MAX_WZ = 0.65
@@ -89,8 +89,8 @@ CIRCULAR_SEARCH_WZ = 0.18
 # Rotating target (/ar_pose_marker, x/y are marker coordinates)
 # "predictive_gate": predict next 3/9 o'clock gate, turn there, then wait.
 # "legacy_track": keep tracking the target ID until it reaches the center.
-ROTATING_AIM_MODE = "legacy_track"
-ROTATING_X_THRESHOLD = 0.14
+ROTATING_AIM_MODE = "predictive_gate"
+ROTATING_X_THRESHOLD = 0.25  #0.25
 ROTATING_Y_MIN = -0.78
 ROTATING_Y_MAX = -0.69
 ROTATING_STABLE_FRAMES_REQUIRED = 1

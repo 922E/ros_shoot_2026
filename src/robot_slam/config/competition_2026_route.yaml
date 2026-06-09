@@ -12,8 +12,8 @@ route_points:
     name: "射击点1-环形靶"
     type: "task"
     target_type: "circular"
-    x: 1.1
-    y: -0.404
+    x: 1.120
+    y: -0.444
     yaw: 0.0
 
   # ── 后退1: 退回安全 x 走廊 ──
@@ -37,7 +37,7 @@ route_points:
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
-    x: 1.100
+    x: 1.120
     y: -1.656
     yaw: 0.0
 
@@ -62,8 +62,8 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
-    x: 1.15
-    y: -2.977
+    x: 1.130
+    y: -2.90
     yaw: 0.0
 
   # ── 终点 (10分)。costmap 阻挡，先到前置点再低速滑入 ──
@@ -71,7 +71,7 @@ route_points:
     name: "终点"
     type: "end"
     x: 0.015
-    y: -3.350
+    y: -3.330
     yaw: 0.0
     pre_point:
       x: 0.200
@@ -92,4 +92,4 @@ global:
 
 field:
   size: 3.6
-  half_size: 1.8
+  half_size: 1.
