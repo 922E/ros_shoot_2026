@@ -70,7 +70,7 @@ route_points:
   - id: 8
     name: "终点"
     type: "end"
-    x: 0.015
+    x: 0.025
     y: -3.330
     yaw: 0.0
     pre_point:

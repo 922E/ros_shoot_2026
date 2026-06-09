@@ -91,8 +91,8 @@ CIRCULAR_SEARCH_WZ = 0.18
 # "legacy_track": keep tracking the target ID until it reaches the center.
 ROTATING_AIM_MODE = "predictive_gate"
 ROTATING_X_THRESHOLD = 0.25  #0.25
-ROTATING_Y_MIN = -0.78
-ROTATING_Y_MAX = -0.69
+ROTATING_Y_MIN = -0.82
+ROTATING_Y_MAX = -0.55
 ROTATING_STABLE_FRAMES_REQUIRED = 1
 ROTATING_KP_FAR = 0.55
 ROTATING_KP_NEAR = 0.35
@@ -108,13 +108,13 @@ ROTATING_GATE_OBSERVE_SEC = 0.8
 ROTATING_GATE_MAX_OBSERVE_SEC = 2.0
 ROTATING_GATE_MIN_SAMPLES = 4
 ROTATING_GATE_MIN_X_DELTA = 0.015
-ROTATING_GATE_LEFT_YAW_OFFSET_DEG = 12.0
-ROTATING_GATE_RIGHT_YAW_OFFSET_DEG = -12.0
+ROTATING_GATE_LEFT_YAW_OFFSET_DEG = 10.0
+ROTATING_GATE_RIGHT_YAW_OFFSET_DEG = -10.0
 ROTATING_GATE_YAW_TOL_DEG = 2.0
 ROTATING_GATE_TURN_KP = 1.0
 ROTATING_GATE_MAX_WZ = 0.35
 ROTATING_GATE_MIN_WZ = 0.06
-ROTATING_GATE_FIRE_X_THRESHOLD = 0.08
+ROTATING_GATE_FIRE_X_THRESHOLD = 0.14
 ROTATING_GATE_STABLE_FRAMES_REQUIRED = 2
 
 # Moving target (/ar_pose_marker, x is marker coordinate)
@@ -440,7 +440,7 @@ class CompetitionControl:
             elif elapsed >= ROTATING_GATE_MAX_OBSERVE_SEC:
                 # Near a turnaround point: the currently closer side is the
                 # fastest fallback when direction cannot be measured.
-                side = 'RIGHT' if ax >= 0.0 else 'LEFT'
+                side = 'LEFT' if ax >= 0.0 else 'RIGHT'
             else:
                 return
 
