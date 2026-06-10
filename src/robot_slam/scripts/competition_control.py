@@ -92,7 +92,6 @@ CIRCULAR_SEARCH_WZ = 0.18
 # "predictive_gate": predict next 3/9 o'clock gate, turn there, then wait.
 # "legacy_track": keep tracking the target ID until it reaches the center.
 ROTATING_AIM_MODE = "legacy_track"
-<<<<<<< HEAD
 ROTATING_X_THRESHOLD = 0.06  # old demo Yaw_th
 ROTATING_Y_MIN = -0.47
 ROTATING_Y_MAX = -0.30
@@ -100,29 +99,8 @@ ROTATING_STABLE_FRAMES_REQUIRED = 2
 ROTATING_KP_FAR = 0.40
 ROTATING_KP_NEAR = 0.40
 ROTATING_NEAR_THRESHOLD = 0.18
-=======
-<<<<<<< HEAD
-ROTATING_X_THRESHOLD = 0.25  # old demo Yaw_th
-ROTATING_Y_MIN = -0.75
-ROTATING_Y_MAX = -0.25
-ROTATING_STABLE_FRAMES_REQUIRED = 1
-ROTATING_KP_FAR = 0.40
-ROTATING_KP_NEAR = 0.40
-ROTATING_NEAR_THRESHOLD = 0.18
-ROTATING_MAX_WZ = 0.40
-ROTATING_MIN_WZ = 0.00
-=======
-ROTATING_X_THRESHOLD = 0.06  # old demo Yaw_th
-ROTATING_Y_MIN = -0.47
-ROTATING_Y_MAX = -0.30
-ROTATING_STABLE_FRAMES_REQUIRED = 2
-ROTATING_KP_FAR = 0.40
-ROTATING_KP_NEAR = 0.40
-ROTATING_NEAR_THRESHOLD = 0.18
->>>>>>> dev2
 ROTATING_MAX_WZ = 0.35
 ROTATING_MIN_WZ = 0.04
->>>>>>> 015a3673caa9f44a3be264a9d4b20771a7b05051
 ROTATING_SHOOT_COOLDOWN = 0.20
 
 # Predictive fixed-gate mode. Positive yaw points left, negative yaw points
@@ -1409,4 +1387,4 @@ if __name__ == '__main__':
         ctrl = CompetitionControl()
         ctrl.run()
     except rospy.ROSInterruptException:
-        pas
+        pass
