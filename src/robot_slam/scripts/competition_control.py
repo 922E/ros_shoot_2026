@@ -91,7 +91,7 @@ CIRCULAR_SEARCH_WZ = 0.18
 # Rotating target (/ar_pose_marker, x/y are marker coordinates)
 # "predictive_gate": predict next 3/9 o'clock gate, turn there, then wait.
 # "legacy_track": keep tracking the target ID until it reaches the center.
-ROTATING_AIM_MODE = "predictive_gate"
+ROTATING_AIM_MODE = "legacy_track"
 ROTATING_X_THRESHOLD = 0.25  #0.25
 ROTATING_Y_MIN = -0.75
 ROTATING_Y_MAX = -0.25
