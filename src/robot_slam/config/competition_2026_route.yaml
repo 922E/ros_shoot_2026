@@ -12,7 +12,11 @@ route_points:
     name: "射击点1-环形靶"
     type: "task"
     target_type: "circular"
+<<<<<<< HEAD
     x: 1.180
+=======
+    x: 1.160
+>>>>>>> dev2
     y: -0.444
     yaw: 0.0
 
@@ -37,7 +41,11 @@ route_points:
     name: "射击点2-旋转靶"
     type: "task"
     target_type: "rotating"
+<<<<<<< HEAD
     x: 1.190
+=======
+    x: 1.160
+>>>>>>> dev2
     y: -1.706
     yaw: 0.0
 
@@ -62,7 +70,11 @@ route_points:
     name: "射击点3-移动靶"
     type: "task"
     target_type: "moving"
+<<<<<<< HEAD
     x: 1.210
+=======
+    x: 1.180
+>>>>>>> dev2
     y: -2.980
     yaw: 0.0
 
@@ -74,7 +86,11 @@ route_points:
     y: -3.355
     yaw: 0.0
     pre_point:
+<<<<<<< HEAD
       x: 0.250
+=======
+      x: 0.200
+>>>>>>> dev2
       y: -3.00
       yaw: 0.0
 
