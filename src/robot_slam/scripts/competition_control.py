@@ -78,20 +78,21 @@ SHOOT_FIRE_DURATION = 0.09
 CIRCULAR_VISION_TARGET_ID = 52
 CIRCULAR_AIM_CENTER_X = 320.0
 CIRCULAR_FIRE_THRESHOLD_PX = 5.0
-CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX = 25.0
-CIRCULAR_FALLBACK_SEC = 2.0
+CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX = 10.0
+CIRCULAR_FALLBACK_SEC = 3.0
 CIRCULAR_STABLE_FRAMES_REQUIRED = 1
 CIRCULAR_KP_FAR = 0.03 #0.05
-CIRCULAR_KP_NEAR = 0.008
+CIRCULAR_KP_NEAR = 0.010
 CIRCULAR_NEAR_THRESHOLD_PX = 50.0
-CIRCULAR_MAX_WZ = 0.65
-CIRCULAR_MIN_WZ = 0.05
+CIRCULAR_MAX_WZ = 0.50
+CIRCULAR_MIN_WZ = 0.10
 CIRCULAR_SEARCH_WZ = 0.18
 
 # Rotating target (/ar_pose_marker, x/y are marker coordinates)
 # "predictive_gate": predict next 3/9 o'clock gate, turn there, then wait.
 # "legacy_track": keep tracking the target ID until it reaches the center.
 ROTATING_AIM_MODE = "legacy_track"
+<<<<<<< HEAD
 ROTATING_X_THRESHOLD = 0.25  # old demo Yaw_th
 ROTATING_Y_MIN = -0.75
 ROTATING_Y_MAX = -0.25
@@ -101,6 +102,17 @@ ROTATING_KP_NEAR = 0.40
 ROTATING_NEAR_THRESHOLD = 0.18
 ROTATING_MAX_WZ = 0.40
 ROTATING_MIN_WZ = 0.00
+=======
+ROTATING_X_THRESHOLD = 0.06  # old demo Yaw_th
+ROTATING_Y_MIN = -0.47
+ROTATING_Y_MAX = -0.30
+ROTATING_STABLE_FRAMES_REQUIRED = 2
+ROTATING_KP_FAR = 0.40
+ROTATING_KP_NEAR = 0.40
+ROTATING_NEAR_THRESHOLD = 0.18
+ROTATING_MAX_WZ = 0.35
+ROTATING_MIN_WZ = 0.04
+>>>>>>> 015a3673caa9f44a3be264a9d4b20771a7b05051
 ROTATING_SHOOT_COOLDOWN = 0.20
 
 # Predictive fixed-gate mode. Positive yaw points left, negative yaw points
@@ -124,7 +136,7 @@ ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN = 0.35
 ROTATING_GATE_MAX_REPLANS = 2
 
 # Moving target (/ar_pose_marker, x is marker coordinate)
-MOVING_X_THRESHOLD = 0.06
+MOVING_X_THRESHOLD = 0.12
 MOVING_STABLE_FRAMES_REQUIRED = 2
 MOVING_KP_FAR = 0.95
 MOVING_KP_NEAR = 0.70
@@ -1387,4 +1399,4 @@ if __name__ == '__main__':
         ctrl = CompetitionControl()
         ctrl.run()
     except rospy.ROSInterruptException:
-        pass
+        pas
