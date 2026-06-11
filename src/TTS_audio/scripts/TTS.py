@@ -134,6 +134,8 @@ class DoubaoWebsocketTTSService(object):
 
         rospy.loginfo('TTS websocket stream received %d bytes',
                       received_bytes)
+        if received_bytes <= 0:
+            raise RuntimeError('websocket finished without audio payload')
         return output_path
 
     async def _stream_one_url(self, url, headers, payload, output_path,
@@ -201,7 +203,9 @@ class DoubaoWebsocketTTSService(object):
             if stripped.startswith(b'{'):
                 return self._parse_json_message(
                     json.loads(message.decode('utf-8')))
-            return False, message
+            if self._looks_like_mp3(message):
+                return False, message
+            return self._parse_binary_message(message)
 
         if isinstance(message, str):
             text = message.strip()
@@ -210,6 +214,83 @@ class DoubaoWebsocketTTSService(object):
             return self._parse_json_message(json.loads(text))
 
         return False, None
+
+    @staticmethod
+    def _looks_like_mp3(data):
+        return data.startswith(b'ID3') or \
+            data.startswith(b'\xff\xfb') or \
+            data.startswith(b'\xff\xf3') or \
+            data.startswith(b'\xff\xf2')
+
+    def _parse_binary_message(self, data):
+        if len(data) < 4:
+            raise RuntimeError('short websocket binary frame: {}'.format(
+                data.hex()))
+
+        first = data[0]
+        version = first >> 4
+        header_words = first & 0x0f
+        header_size = header_words * 4
+        message_type = data[1] >> 4
+        flags = data[1] & 0x0f
+        serialization = data[2] >> 4
+        compression = data[2] & 0x0f
+
+        if version == 0 or header_size < 4 or header_size > len(data):
+            raise RuntimeError(
+                'unknown non-audio websocket binary frame len=%d hex=%s' %
+                (len(data), data[:80].hex()))
+
+        payload = data[header_size:]
+
+        # Volc binary TTS protocol: 0xb carries audio payload chunks.
+        if message_type == 0x0b:
+            if flags == 0:
+                return False, None
+            if len(payload) < 8:
+                raise RuntimeError('invalid audio frame len=%d hex=%s' %
+                                   (len(data), data[:80].hex()))
+            sequence = int.from_bytes(payload[:4], 'big', signed=True)
+            payload_size = int.from_bytes(payload[4:8], 'big', signed=False)
+            audio_payload = payload[8:8 + payload_size]
+            done = sequence < 0
+            return done, audio_payload
+
+        # 0xf is an error frame in Volc's binary protocol.
+        if message_type == 0x0f:
+            text = self._decode_protocol_payload(
+                payload, serialization, compression)
+            raise RuntimeError('TTS websocket error frame: {}'.format(text))
+
+        # 0xc is a frontend/control response. It is not playable audio.
+        if message_type == 0x0c:
+            text = self._decode_protocol_payload(
+                payload, serialization, compression)
+            rospy.loginfo('TTS websocket control frame: %s', text[:300])
+            return False, None
+
+        raise RuntimeError(
+            'unsupported websocket binary frame type=0x%x len=%d hex=%s' %
+            (message_type, len(data), data[:80].hex()))
+
+    def _decode_protocol_payload(self, payload, serialization, compression):
+        # Some protocol responses prefix JSON/error text with a 4-byte length.
+        if len(payload) >= 4:
+            payload_len = int.from_bytes(payload[:4], 'big', signed=False)
+            if 0 <= payload_len <= len(payload) - 4:
+                payload = payload[4:4 + payload_len]
+
+        if compression == 1:
+            import gzip
+            payload = gzip.decompress(payload)
+
+        if serialization == 1:
+            try:
+                return json.dumps(json.loads(payload.decode('utf-8')),
+                                  ensure_ascii=False)
+            except Exception:
+                pass
+        return payload.decode('utf-8', 'replace')
 
     def _parse_json_message(self, data):
         code = data.get('code')
