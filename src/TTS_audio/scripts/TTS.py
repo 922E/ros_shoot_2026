@@ -3,6 +3,7 @@
 
 import asyncio
 import base64
+import gzip
 import json
 import os
 import subprocess
@@ -145,7 +146,7 @@ class DoubaoWebsocketTTSService(object):
             async with websockets.connect(
                     url, extra_headers=headers,
                     ping_interval=None, close_timeout=2) as ws:
-                await ws.send(json.dumps(payload, ensure_ascii=False))
+                await ws.send(self._build_binary_request(payload))
                 while not rospy.is_shutdown():
                     try:
                         message = await asyncio.wait_for(
@@ -196,6 +197,17 @@ class DoubaoWebsocketTTSService(object):
                 },
             },
         }
+
+    def _build_binary_request(self, payload):
+        payload_bytes = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        payload_bytes = gzip.compress(payload_bytes)
+
+        # Volc/OpenSpeech websocket binary protocol:
+        # version=1, header_size=1, full client request, JSON, gzip.
+        header = bytearray(b'\x11\x10\x11\x00')
+        header.extend(len(payload_bytes).to_bytes(4, 'big'))
+        header.extend(payload_bytes)
+        return bytes(header)
 
     def _parse_ws_message(self, message):
         if isinstance(message, bytes):
@@ -274,6 +286,15 @@ class DoubaoWebsocketTTSService(object):
             (message_type, len(data), data[:80].hex()))
 
     def _decode_protocol_payload(self, payload, serialization, compression):
+        json_start = payload.find(b'{')
+        if json_start >= 0:
+            candidate = payload[json_start:]
+            try:
+                return json.dumps(json.loads(candidate.decode('utf-8')),
+                                  ensure_ascii=False)
+            except Exception:
+                pass
+
         # Some protocol responses prefix JSON/error text with a 4-byte length.
         if len(payload) >= 4:
             payload_len = int.from_bytes(payload[:4], 'big', signed=False)
