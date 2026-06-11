@@ -11,16 +11,18 @@ import uuid
 
 import rospy
 import websockets
+from std_msgs.msg import String
 from TTS_audio.srv import StringService, StringServiceResponse
 
 
-DEFAULT_WS_URL = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
+DEFAULT_WS_URL = 'wss://openspeech.bytedance.com/api/v3/tts/unidirectional'
 DEFAULT_API_KEY = '606448be-ddcf-40ed-86fe-2691b56a5c62'
 DEFAULT_RESOURCE_ID = 'volc.service_type.10029'
 DEFAULT_SPEAKER = 'zh_male_beijingxiaoye_emo_v2_mars_bigtts'
 DEFAULT_SAMPLE_RATE = 24000
 DEFAULT_AUDIO_FORMAT = 'mp3'
 DEFAULT_PLAYER = 'mplayer'
+DEFAULT_LOCAL_TTS_TOPIC = '/voiceWords'
 
 DEFAULT_LEGACY_WS_URL = 'wss://openspeech.bytedance.com/api/v1/tts/ws_binary'
 DEFAULT_LEGACY_APPID = '5036728199'
@@ -49,9 +51,7 @@ def _normalize_appid(value):
 class DoubaoWebsocketTTSService(object):
     def __init__(self):
         self.ws_url = rospy.get_param('~ws_url', DEFAULT_WS_URL)
-        self.ws_fallback_urls = rospy.get_param(
-            '~ws_fallback_urls',
-            ['wss://openspeech.bytedance.com/api/v3/tts/bidirectional'])
+        self.ws_fallback_urls = rospy.get_param('~ws_fallback_urls', [])
         self.api_key = rospy.get_param('~api_key',
                                        os.environ.get('DOUBAO_TTS_API_KEY',
                                                       DEFAULT_API_KEY))
@@ -67,8 +67,16 @@ class DoubaoWebsocketTTSService(object):
         self.timeout = float(rospy.get_param('~timeout', 30.0))
         self.play_realtime = _as_bool(rospy.get_param('~play_realtime',
                                                       True))
+        self.prefer_local_tts = _as_bool(
+            rospy.get_param('~prefer_local_tts', False))
+        self.local_fallback_enabled = _as_bool(
+            rospy.get_param('~local_fallback_enabled', False))
+        self.local_tts_topic = rospy.get_param('~local_tts_topic',
+                                               DEFAULT_LOCAL_TTS_TOPIC)
+        self.local_tts_pub = rospy.Publisher(
+            self.local_tts_topic, String, queue_size=10)
         self.prefer_legacy_ws = _as_bool(
-            rospy.get_param('~prefer_legacy_ws', True))
+            rospy.get_param('~prefer_legacy_ws', False))
         self.legacy_ws_url = rospy.get_param('~legacy_ws_url',
                                              DEFAULT_LEGACY_WS_URL)
         self.legacy_appid = _normalize_appid(
@@ -87,8 +95,10 @@ class DoubaoWebsocketTTSService(object):
 
         rospy.Service('tts_service', StringService, self.handle_request)
         rospy.loginfo(
-            'Doubao websocket TTS ready: prefer_legacy_ws=%s url=%s '
-            'legacy_url=%s speaker=%s format=%s rate=%d',
+            'TTS service ready: prefer_local_tts=%s local_topic=%s '
+            'prefer_legacy_ws=%s url=%s legacy_url=%s speaker=%s '
+            'format=%s rate=%d',
+            self.prefer_local_tts, self.local_tts_topic,
             self.prefer_legacy_ws, self.ws_url, self.legacy_ws_url,
             self.speaker, self.audio_format, self.sample_rate)
 
@@ -98,6 +108,9 @@ class DoubaoWebsocketTTSService(object):
             return StringServiceResponse('error: empty text')
 
         rospy.loginfo('TTS request: %s', text)
+        if self.prefer_local_tts:
+            return self.publish_local_tts(text)
+
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
@@ -109,9 +122,21 @@ class DoubaoWebsocketTTSService(object):
             return StringServiceResponse('ok: {}'.format(audio_path))
         except Exception as exc:
             rospy.logerr('TTS failed: %s', str(exc))
+            if self.local_fallback_enabled:
+                rospy.logwarn('fallback to local TTS topic: %s',
+                              self.local_tts_topic)
+                return self.publish_local_tts(text)
             return StringServiceResponse('error: {}'.format(str(exc)))
         finally:
             loop.close()
+
+    def publish_local_tts(self, text):
+        # robot_voice/tts_subscribe subscribes to "voiceWords", usually /voiceWords.
+        for _ in range(3):
+            self.local_tts_pub.publish(String(data=text))
+            rospy.sleep(0.05)
+        return StringServiceResponse(
+            'ok: local_tts_topic {}'.format(self.local_tts_topic))
 
     async def synthesize_stream(self, text):
         reqid = str(uuid.uuid4())
@@ -139,15 +164,8 @@ class DoubaoWebsocketTTSService(object):
                 received_bytes += await self._stream_legacy_ws(
                     text, reqid, output_path, player_proc)
             else:
-                try:
-                    received_bytes += await self._stream_v3_ws(
-                        headers, payload, output_path, player_proc)
-                except Exception as exc:
-                    rospy.logwarn(
-                        'v3 bidirection websocket failed, fallback to '
-                        'legacy ws_binary: %s', str(exc))
-                    received_bytes += await self._stream_legacy_ws(
-                        text, reqid, output_path, player_proc)
+                received_bytes += await self._stream_v3_ws(
+                    headers, payload, output_path, player_proc)
         finally:
             if player_proc is not None:
                 if player_proc.stdin is not None:

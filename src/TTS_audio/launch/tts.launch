@@ -1,5 +1,5 @@
 <launch>
-  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/bidirection"/>
+  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/unidirectional"/>
   <arg name="api_key" default="606448be-ddcf-40ed-86fe-2691b56a5c62"/>
   <arg name="resource_id" default="volc.service_type.10029"/>
   <arg name="speaker" default="zh_male_beijingxiaoye_emo_v2_mars_bigtts"/>
@@ -8,7 +8,10 @@
   <arg name="player" default="mplayer"/>
   <arg name="output_dir" default="/tmp"/>
   <arg name="play_realtime" default="true"/>
-  <arg name="prefer_legacy_ws" default="true"/>
+  <arg name="prefer_local_tts" default="false"/>
+  <arg name="local_fallback_enabled" default="false"/>
+  <arg name="local_tts_topic" default="/voiceWords"/>
+  <arg name="prefer_legacy_ws" default="false"/>
   <arg name="legacy_ws_url" default="wss://openspeech.bytedance.com/api/v1/tts/ws_binary"/>
   <arg name="legacy_appid" default="s5036728199"/>
   <arg name="legacy_token" default="0gCewCOkjsDGjVEEzdnAQR8uVgUM0suM"/>
@@ -26,6 +29,9 @@
     <param name="player" value="$(arg player)" type="str"/>
     <param name="output_dir" value="$(arg output_dir)" type="str"/>
     <param name="play_realtime" value="$(arg play_realtime)"/>
+    <param name="prefer_local_tts" value="$(arg prefer_local_tts)"/>
+    <param name="local_fallback_enabled" value="$(arg local_fallback_enabled)"/>
+    <param name="local_tts_topic" value="$(arg local_tts_topic)" type="str"/>
     <param name="prefer_legacy_ws" value="$(arg prefer_legacy_ws)"/>
     <param name="legacy_ws_url" value="$(arg legacy_ws_url)" type="str"/>
     <param name="legacy_appid" value="$(arg legacy_appid)" type="str"/>
