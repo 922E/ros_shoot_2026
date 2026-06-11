@@ -281,7 +281,7 @@ class CompetitionControlV2(object):
             self.target_id_moving = moving_id
 
         if self._voice_ready():
-            msg = u'语音确认，旋转靶{}号，移动靶{}号'.format(
+            msg = u'旋转靶 {}，移动靶 {}'.format(
                 self.target_id_rotating, self.target_id_moving)
             self.voice_pub.publish(String(_safe(msg)))
             rospy.loginfo('[V2][VOICE] IDs rotating=%s moving=%s',
@@ -740,7 +740,6 @@ class CompetitionControlV2(object):
         self._set_initial_pose()
         rospy.loginfo('[V2] Place robot at start mark, press Enter')
         raw_input('Press Enter to start competition_v2: ')
-        self._say(u'比赛开始')
 
         self._set_state('VOICE')
         if not self._wait_voice():

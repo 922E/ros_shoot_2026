@@ -58,7 +58,7 @@ def chinese_callback(msg):
         if keyword in msg.data:
             target_id_rotating = value
             rospy.loginfo(f"检测到旋转靶关键词: {keyword}, 设置 target_id_rotating = {target_id_rotating}")
-            arrive_str = "旋转靶为{}号".format(keyword)
+            arrive_str = u"旋转靶 {}".format(value)
             arrive_pub.publish(arrive_str)
             
             # ✅ 播报语音
@@ -75,7 +75,7 @@ def chinese_callback(msg):
         if keyword in msg.data:
             target_id_moving = value
             rospy.loginfo(f"检测到移动靶关键词: {keyword}, 设置 target_id_moving = {target_id_moving}")
-            arrive_str = "移动靶为{}号".format(keyword)
+            arrive_str = u"移动靶 {}".format(value)
             arrive_pub.publish(arrive_str)
             
             # ✅ 播报语音

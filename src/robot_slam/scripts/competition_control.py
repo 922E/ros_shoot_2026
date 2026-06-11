@@ -1191,7 +1191,6 @@ class CompetitionControl:
         raw_input("Press Enter to start competition: ")
         self.state = 'VOICE_RECV'
         rospy.loginfo("Competition started!")
-        self._say(u"比赛开始")
 
     def _handle_voice_recv(self):
         global target_id_rotating, target_id_moving
