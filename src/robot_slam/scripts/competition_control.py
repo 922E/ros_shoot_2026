@@ -98,8 +98,8 @@ CIRCULAR_SEARCH_WZ = 0.18
 # "legacy_track": keep tracking the target ID until it reaches the center.
 ROTATING_AIM_MODE = "legacy_track"
 ROTATING_X_THRESHOLD = 0.06  # old demo Yaw_th
-ROTATING_Y_MIN = -0.47
-ROTATING_Y_MAX = -0.30
+ROTATING_Y_MIN = -0.80
+ROTATING_Y_MAX = -0.50
 ROTATING_STABLE_FRAMES_REQUIRED = 2
 ROTATING_KP_FAR = 0.40
 ROTATING_KP_NEAR = 0.40
