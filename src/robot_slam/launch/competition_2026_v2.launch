@@ -12,6 +12,8 @@
   <arg name="voice_wait_timeout" default="18.0"/>
   <arg name="voice_retry_limit" default="2"/>
 
+  <include file="$(find TTS_audio)/launch/tts.launch"/>
+
   <!-- 语音识别: audio_topic -> chinese_topic -->
   <node if="$(arg enable_voice_asr)" name="voice_asr_2026"
         pkg="robot_slam" type="2026_shoot_demo.py"
@@ -27,6 +29,7 @@
     <param name="require_wakeup_word" type="bool" value="$(arg require_wakeup_word)"/>
     <param name="voice_wait_timeout" type="double" value="$(arg voice_wait_timeout)"/>
     <param name="voice_retry_limit" type="int" value="$(arg voice_retry_limit)"/>
+    <param name="tts_enabled" value="true"/>
   </node>
 
   <!-- 比赛监控 -->

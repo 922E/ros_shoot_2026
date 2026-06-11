@@ -14,6 +14,11 @@ from std_msgs.msg import String, Int32
 from math import pi
 import tf
 
+try:
+    from TTS_audio.srv import StringService
+except Exception:
+    StringService = None
+
 
 def _safe(s):
     """Safe str for Python 2: encode unicode to utf-8 bytes"""
@@ -148,6 +153,8 @@ class CompetitionControl:
 
         self.state = 'WAIT_START'
         self.current_point_index = 0
+        self.tts_enabled = rospy.get_param('~tts_enabled', True)
+        self.tts_client = None
         self.circular_stable_frames = 0
         self.circular_aim_start = None
         self.rotating_stable_frames = 0
@@ -212,6 +219,22 @@ class CompetitionControl:
         self.robot_y = 0.0
 
         rospy.loginfo("competition_control init OK, state: %s", self.state)
+
+    def _say(self, text):
+        if not self.tts_enabled or StringService is None:
+            return False
+        try:
+            if self.tts_client is None:
+                rospy.wait_for_service('tts_service', timeout=1.0)
+                self.tts_client = rospy.ServiceProxy('tts_service',
+                                                     StringService)
+            response = self.tts_client(_safe(text))
+            rospy.loginfo("[TTS] %s", _safe(response.data))
+            return True
+        except Exception as exc:
+            rospy.logwarn("[TTS] unavailable, skip '%s': %s",
+                          _safe(text), str(exc))
+            return False
 
     # ===================== Config =====================
 
@@ -1168,6 +1191,7 @@ class CompetitionControl:
         raw_input("Press Enter to start competition: ")
         self.state = 'VOICE_RECV'
         rospy.loginfo("Competition started!")
+        self._say(u"比赛开始")
 
     def _handle_voice_recv(self):
         global target_id_rotating, target_id_moving
@@ -1380,6 +1404,7 @@ class CompetitionControl:
         rospy.loginfo("========== COMPETITION FINISHED! ==========")
         self.cancel()
         self.pub.publish(Twist())
+        self._say(u"比赛结束")
 
 
 if __name__ == '__main__':

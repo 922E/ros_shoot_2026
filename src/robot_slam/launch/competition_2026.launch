@@ -8,6 +8,8 @@
 
   <arg name="route_config" default="$(find robot_slam)/config/competition_2026_route.yaml"/>
 
+  <include file="$(find TTS_audio)/launch/tts.launch"/>
+
   <!-- 合并语音链路: audio_topic -> ASR/ID解析 -> target_id_rotating/moving -->
   <node name="shoot_2026_voice"
         pkg="robot_slam" type="shoot_2026_voice.py"
@@ -17,6 +19,7 @@
   <node name="competition_control" pkg="robot_slam" type="competition_control.py"
         output="screen" required="true">
     <param name="route_config" value="$(arg route_config)"/>
+    <param name="tts_enabled" value="true"/>
   </node>
 
   <!-- 比赛监控 -->

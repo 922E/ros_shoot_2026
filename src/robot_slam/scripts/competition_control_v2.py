@@ -15,6 +15,11 @@ from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Twi
 from move_base_msgs.msg import MoveBaseAction
 from std_msgs.msg import Int32, String
 
+try:
+    from TTS_audio.srv import StringService
+except Exception:
+    StringService = None
+
 
 def _safe(s):
     if isinstance(s, unicode):
@@ -101,6 +106,8 @@ class CompetitionControlV2(object):
         self.voice_wait_timeout = float(rospy.get_param(
             '~voice_wait_timeout', 18.0))
         self.voice_retry_limit = int(rospy.get_param('~voice_retry_limit', 2))
+        self.tts_enabled = rospy.get_param('~tts_enabled', True)
+        self.tts_client = None
 
         self.should_attack_circular = False
         self.should_attack_rotating = False
@@ -141,6 +148,22 @@ class CompetitionControlV2(object):
             rospy.logwarn('[V2] /dev/shoot not available, dry-run shooting')
 
         rospy.loginfo('[V2] loaded %d route points', len(self.route_points))
+
+    def _say(self, text):
+        if not self.tts_enabled or StringService is None:
+            return False
+        try:
+            if self.tts_client is None:
+                rospy.wait_for_service('tts_service', timeout=1.0)
+                self.tts_client = rospy.ServiceProxy('tts_service',
+                                                     StringService)
+            response = self.tts_client(_safe(text))
+            rospy.loginfo('[V2][TTS] %s', _safe(response.data))
+            return True
+        except Exception as exc:
+            rospy.logwarn("[V2][TTS] unavailable, skip '%s': %s",
+                          _safe(text), str(exc))
+            return False
 
     # ===================== Config =====================
 
@@ -717,6 +740,7 @@ class CompetitionControlV2(object):
         self._set_initial_pose()
         rospy.loginfo('[V2] Place robot at start mark, press Enter')
         raw_input('Press Enter to start competition_v2: ')
+        self._say(u'比赛开始')
 
         self._set_state('VOICE')
         if not self._wait_voice():
@@ -733,6 +757,7 @@ class CompetitionControlV2(object):
         self._set_state('FINISH')
         self._stop(0.3)
         rospy.loginfo('[V2] competition finished')
+        self._say(u'比赛结束')
 
 
 if __name__ == '__main__':
