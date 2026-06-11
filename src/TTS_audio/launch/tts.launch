@@ -1,0 +1,24 @@
+<launch>
+  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/bidirectional"/>
+  <arg name="api_key" default="606448be-ddcf-40ed-86fe-2691b56a5c62"/>
+  <arg name="resource_id" default="volc.service_type.10029"/>
+  <arg name="speaker" default="zh_male_beijingxiaoye_emo_v2_mars_bigtts"/>
+  <arg name="sample_rate" default="24000"/>
+  <arg name="audio_format" default="mp3"/>
+  <arg name="player" default="mplayer"/>
+  <arg name="output_dir" default="/tmp"/>
+  <arg name="play_realtime" default="true"/>
+
+  <node name="tts_server" pkg="TTS_audio" type="TTS.py"
+        output="screen">
+    <param name="ws_url" value="$(arg ws_url)"/>
+    <param name="api_key" value="$(arg api_key)"/>
+    <param name="resource_id" value="$(arg resource_id)"/>
+    <param name="speaker" value="$(arg speaker)"/>
+    <param name="sample_rate" value="$(arg sample_rate)"/>
+    <param name="audio_format" value="$(arg audio_format)"/>
+    <param name="player" value="$(arg player)"/>
+    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="play_realtime" value="$(arg play_realtime)"/>
+  </node>
+</launch>
