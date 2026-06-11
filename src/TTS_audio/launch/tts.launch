@@ -1,5 +1,7 @@
 <launch>
-  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/unidirectional"/>
+  <arg name="transport" default="http"/>
+  <arg name="http_url" default="https://openspeech.bytedance.com/api/v3/tts/unidirectional"/>
+  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/bidirection"/>
   <arg name="api_key" default="606448be-ddcf-40ed-86fe-2691b56a5c62"/>
   <arg name="resource_id" default="volc.service_type.10029"/>
   <arg name="speaker" default="zh_male_beijingxiaoye_emo_v2_mars_bigtts"/>
@@ -20,6 +22,8 @@
 
   <node name="tts_server" pkg="TTS_audio" type="TTS.py"
         output="screen">
+    <param name="transport" value="$(arg transport)" type="str"/>
+    <param name="http_url" value="$(arg http_url)" type="str"/>
     <param name="ws_url" value="$(arg ws_url)" type="str"/>
     <param name="api_key" value="$(arg api_key)" type="str"/>
     <param name="resource_id" value="$(arg resource_id)" type="str"/>

@@ -8,6 +8,8 @@ import json
 import os
 import subprocess
 import uuid
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import rospy
 import websockets
@@ -15,7 +17,8 @@ from std_msgs.msg import String
 from TTS_audio.srv import StringService, StringServiceResponse
 
 
-DEFAULT_WS_URL = 'wss://openspeech.bytedance.com/api/v3/tts/unidirectional'
+DEFAULT_HTTP_URL = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'
+DEFAULT_WS_URL = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
 DEFAULT_API_KEY = '606448be-ddcf-40ed-86fe-2691b56a5c62'
 DEFAULT_RESOURCE_ID = 'volc.service_type.10029'
 DEFAULT_SPEAKER = 'zh_male_beijingxiaoye_emo_v2_mars_bigtts'
@@ -50,6 +53,8 @@ def _normalize_appid(value):
 
 class DoubaoWebsocketTTSService(object):
     def __init__(self):
+        self.transport = rospy.get_param('~transport', 'http')
+        self.http_url = rospy.get_param('~http_url', DEFAULT_HTTP_URL)
         self.ws_url = rospy.get_param('~ws_url', DEFAULT_WS_URL)
         self.ws_fallback_urls = rospy.get_param('~ws_fallback_urls', [])
         self.api_key = rospy.get_param('~api_key',
@@ -96,11 +101,12 @@ class DoubaoWebsocketTTSService(object):
         rospy.Service('tts_service', StringService, self.handle_request)
         rospy.loginfo(
             'TTS service ready: prefer_local_tts=%s local_topic=%s '
-            'prefer_legacy_ws=%s url=%s legacy_url=%s speaker=%s '
-            'format=%s rate=%d',
+            'transport=%s http_url=%s prefer_legacy_ws=%s ws_url=%s '
+            'legacy_url=%s speaker=%s format=%s rate=%d',
             self.prefer_local_tts, self.local_tts_topic,
-            self.prefer_legacy_ws, self.ws_url, self.legacy_ws_url,
-            self.speaker, self.audio_format, self.sample_rate)
+            self.transport, self.http_url, self.prefer_legacy_ws,
+            self.ws_url, self.legacy_ws_url, self.speaker,
+            self.audio_format, self.sample_rate)
 
     def handle_request(self, req):
         text = req.data.strip()
@@ -111,10 +117,15 @@ class DoubaoWebsocketTTSService(object):
         if self.prefer_local_tts:
             return self.publish_local_tts(text)
 
-        loop = asyncio.new_event_loop()
+        loop = None
         try:
-            asyncio.set_event_loop(loop)
-            audio_path = loop.run_until_complete(self.synthesize_stream(text))
+            if self.transport == 'http':
+                audio_path = self.synthesize_http(text)
+            else:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                audio_path = loop.run_until_complete(
+                    self.synthesize_stream(text))
             size = os.path.getsize(audio_path)
             rospy.loginfo('TTS audio saved: %s (%d bytes)', audio_path, size)
             if size <= 0:
@@ -128,7 +139,8 @@ class DoubaoWebsocketTTSService(object):
                 return self.publish_local_tts(text)
             return StringServiceResponse('error: {}'.format(str(exc)))
         finally:
-            loop.close()
+            if loop is not None:
+                loop.close()
 
     def publish_local_tts(self, text):
         # robot_voice/tts_subscribe subscribes to "voiceWords", usually /voiceWords.
@@ -137,6 +149,69 @@ class DoubaoWebsocketTTSService(object):
             rospy.sleep(0.05)
         return StringServiceResponse(
             'ok: local_tts_topic {}'.format(self.local_tts_topic))
+
+    def synthesize_http(self, text):
+        reqid = str(uuid.uuid4())
+        output_path = os.path.join(
+            self.output_dir, 'tts_audio_{}.{}'.format(
+                reqid, self.audio_format))
+        headers = {
+            'x-api-key': self.api_key,
+            'X-Api-Resource-Id': self.resource_id,
+            'X-Api-Connect-Id': reqid,
+            'Connection': 'keep-alive',
+            'Content-Type': 'application/json',
+        }
+        payload = self._build_http_payload(text)
+        data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+
+        rospy.loginfo('calling Doubao TTS HTTP: %s resource_id=%s',
+                      self.http_url, self.resource_id)
+        req = urllib_request.Request(
+            self.http_url, data=data, headers=headers, method='POST')
+        try:
+            with urllib_request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read()
+                content_type = resp.headers.get('Content-Type', '')
+        except urllib_error.HTTPError as exc:
+            body = exc.read().decode('utf-8', 'replace')
+            raise RuntimeError('HTTP %s: %s' % (exc.code, body[:800]))
+
+        audio_data = self._extract_http_audio(raw, content_type)
+        if not audio_data:
+            preview = raw[:800].decode('utf-8', 'replace')
+            raise RuntimeError('HTTP response has no audio payload: %s' %
+                               preview)
+
+        with open(output_path, 'wb') as audio_file:
+            audio_file.write(audio_data)
+        if self.play_realtime:
+            self._play_audio_file(output_path)
+        rospy.loginfo('TTS HTTP received %d bytes', len(audio_data))
+        return output_path
+
+    def _build_http_payload(self, text):
+        request_payload = self._build_payload(text, str(uuid.uuid4()))
+        return {
+            'req_params': request_payload['req_params'],
+        }
+
+    def _extract_http_audio(self, raw, content_type):
+        if self._looks_like_mp3(raw) or content_type.startswith('audio/'):
+            return raw
+
+        text = raw.decode('utf-8', 'replace').strip()
+        if not text:
+            return None
+        data = json.loads(text)
+        done, audio_chunk = self._parse_json_message(data)
+        if audio_chunk:
+            return audio_chunk
+        raise RuntimeError('TTS API response without audio: {}'.format(
+            json.dumps(data, ensure_ascii=False)[:800]))
+
+    def _play_audio_file(self, audio_path):
+        subprocess.Popen([self.player, '-really-quiet', audio_path]).wait()
 
     async def synthesize_stream(self, text):
         reqid = str(uuid.uuid4())
