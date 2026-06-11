@@ -8,6 +8,12 @@
   <arg name="player" default="mplayer"/>
   <arg name="output_dir" default="/tmp"/>
   <arg name="play_realtime" default="true"/>
+  <arg name="prefer_legacy_ws" default="true"/>
+  <arg name="legacy_ws_url" default="wss://openspeech.bytedance.com/api/v1/tts/ws_binary"/>
+  <arg name="legacy_appid" default="5036728199"/>
+  <arg name="legacy_token" default="0gCewCOkjsDGjVEEzdnAQR8uVgUM0suM"/>
+  <arg name="legacy_cluster" default="volcano_tts"/>
+  <arg name="legacy_voice_type" default="BV001_streaming"/>
 
   <node name="tts_server" pkg="TTS_audio" type="TTS.py"
         output="screen">
@@ -20,5 +26,11 @@
     <param name="player" value="$(arg player)"/>
     <param name="output_dir" value="$(arg output_dir)"/>
     <param name="play_realtime" value="$(arg play_realtime)"/>
+    <param name="prefer_legacy_ws" value="$(arg prefer_legacy_ws)"/>
+    <param name="legacy_ws_url" value="$(arg legacy_ws_url)"/>
+    <param name="legacy_appid" value="$(arg legacy_appid)"/>
+    <param name="legacy_token" value="$(arg legacy_token)"/>
+    <param name="legacy_cluster" value="$(arg legacy_cluster)"/>
+    <param name="legacy_voice_type" value="$(arg legacy_voice_type)"/>
   </node>
 </launch>

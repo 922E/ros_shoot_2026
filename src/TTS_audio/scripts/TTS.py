@@ -22,6 +22,12 @@ DEFAULT_SAMPLE_RATE = 24000
 DEFAULT_AUDIO_FORMAT = 'mp3'
 DEFAULT_PLAYER = 'mplayer'
 
+DEFAULT_LEGACY_WS_URL = 'wss://openspeech.bytedance.com/api/v1/tts/ws_binary'
+DEFAULT_LEGACY_APPID = '5036728199'
+DEFAULT_LEGACY_TOKEN = '0gCewCOkjsDGjVEEzdnAQR8uVgUM0suM'
+DEFAULT_LEGACY_CLUSTER = 'volcano_tts'
+DEFAULT_LEGACY_VOICE_TYPE = 'BV001_streaming'
+
 
 def _as_bool(value):
     if isinstance(value, str):
@@ -50,14 +56,30 @@ class DoubaoWebsocketTTSService(object):
         self.timeout = float(rospy.get_param('~timeout', 30.0))
         self.play_realtime = _as_bool(rospy.get_param('~play_realtime',
                                                       True))
+        self.prefer_legacy_ws = _as_bool(
+            rospy.get_param('~prefer_legacy_ws', True))
+        self.legacy_ws_url = rospy.get_param('~legacy_ws_url',
+                                             DEFAULT_LEGACY_WS_URL)
+        self.legacy_appid = rospy.get_param('~legacy_appid',
+                                            DEFAULT_LEGACY_APPID)
+        self.legacy_token = rospy.get_param(
+            '~legacy_token',
+            os.environ.get('DOUBAO_TTS_LEGACY_TOKEN',
+                           DEFAULT_LEGACY_TOKEN))
+        self.legacy_cluster = rospy.get_param('~legacy_cluster',
+                                              DEFAULT_LEGACY_CLUSTER)
+        self.legacy_voice_type = rospy.get_param('~legacy_voice_type',
+                                                 DEFAULT_LEGACY_VOICE_TYPE)
 
         if not os.path.isdir(self.output_dir):
             os.makedirs(self.output_dir)
 
         rospy.Service('tts_service', StringService, self.handle_request)
         rospy.loginfo(
-            'Doubao websocket TTS ready: url=%s speaker=%s format=%s rate=%d',
-            self.ws_url, self.speaker, self.audio_format, self.sample_rate)
+            'Doubao websocket TTS ready: prefer_legacy_ws=%s url=%s '
+            'legacy_url=%s speaker=%s format=%s rate=%d',
+            self.prefer_legacy_ws, self.ws_url, self.legacy_ws_url,
+            self.speaker, self.audio_format, self.sample_rate)
 
     def handle_request(self, req):
         text = req.data.strip()
@@ -102,29 +124,19 @@ class DoubaoWebsocketTTSService(object):
 
         received_bytes = 0
         try:
-            urls = [self.ws_url] + [
-                item for item in self.ws_fallback_urls
-                if item and item != self.ws_url]
-            last_error = None
-            for url in urls:
+            if self.prefer_legacy_ws:
+                received_bytes += await self._stream_legacy_ws(
+                    text, reqid, output_path, player_proc)
+            else:
                 try:
-                    rospy.loginfo('connecting Doubao TTS websocket: %s', url)
-                    chunk_count = await self._stream_one_url(
-                        url, headers, payload, output_path, player_proc)
-                    received_bytes += chunk_count
-                    last_error = None
-                    break
-                except websockets.exceptions.InvalidStatusCode as exc:
-                    last_error = exc
-                    rospy.logwarn('websocket rejected %s: HTTP %s',
-                                  url, exc.status_code)
-                    if exc.status_code != 404:
-                        raise
+                    received_bytes += await self._stream_v3_ws(
+                        headers, payload, output_path, player_proc)
                 except Exception as exc:
-                    last_error = exc
-                    raise
-            if last_error is not None:
-                raise last_error
+                    rospy.logwarn(
+                        'v3 bidirection websocket failed, fallback to '
+                        'legacy ws_binary: %s', str(exc))
+                    received_bytes += await self._stream_legacy_ws(
+                        text, reqid, output_path, player_proc)
         finally:
             if player_proc is not None:
                 if player_proc.stdin is not None:
@@ -139,6 +151,37 @@ class DoubaoWebsocketTTSService(object):
         if received_bytes <= 0:
             raise RuntimeError('websocket finished without audio payload')
         return output_path
+
+    async def _stream_v3_ws(self, headers, payload, output_path,
+                            player_proc):
+        urls = [self.ws_url] + [
+            item for item in self.ws_fallback_urls
+            if item and item != self.ws_url]
+        last_error = None
+        for url in urls:
+            try:
+                rospy.loginfo('connecting Doubao TTS websocket: %s', url)
+                return await self._stream_one_url(
+                    url, headers, payload, output_path, player_proc)
+            except websockets.exceptions.InvalidStatusCode as exc:
+                last_error = exc
+                rospy.logwarn('websocket rejected %s: HTTP %s',
+                              url, exc.status_code)
+                if exc.status_code != 404:
+                    raise
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError('no websocket url configured')
+
+    async def _stream_legacy_ws(self, text, reqid, output_path, player_proc):
+        headers = {
+            'Authorization': 'Bearer; {}'.format(self.legacy_token),
+        }
+        payload = self._build_legacy_payload(text, reqid)
+        rospy.loginfo('connecting Doubao legacy TTS websocket: %s',
+                      self.legacy_ws_url)
+        return await self._stream_one_url(
+            self.legacy_ws_url, headers, payload, output_path, player_proc)
 
     async def _stream_one_url(self, url, headers, payload, output_path,
                               player_proc):
@@ -205,6 +248,31 @@ class DoubaoWebsocketTTSService(object):
                     'format': self.audio_format,
                     'sample_rate': self.sample_rate,
                 },
+            },
+            'request': {
+                'reqid': reqid,
+                'text': text,
+                'text_type': 'plain',
+                'operation': 'submit',
+            },
+        }
+
+    def _build_legacy_payload(self, text, reqid):
+        return {
+            'app': {
+                'appid': self.legacy_appid,
+                'token': self.legacy_token,
+                'cluster': self.legacy_cluster,
+            },
+            'user': {
+                'uid': 'ros_shoot_2026',
+            },
+            'audio': {
+                'voice_type': self.legacy_voice_type,
+                'encoding': self.audio_format,
+                'speed_ratio': 0.9,
+                'volume_ratio': 2.0,
+                'pitch_ratio': 1.0,
             },
             'request': {
                 'reqid': reqid,
