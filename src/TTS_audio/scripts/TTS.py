@@ -35,6 +35,17 @@ def _as_bool(value):
     return bool(value)
 
 
+def _as_ros_string(value):
+    return str(value).strip()
+
+
+def _normalize_appid(value):
+    text = _as_ros_string(value)
+    if text.startswith('s') and text[1:].isdigit():
+        return text[1:]
+    return text
+
+
 class DoubaoWebsocketTTSService(object):
     def __init__(self):
         self.ws_url = rospy.get_param('~ws_url', DEFAULT_WS_URL)
@@ -60,8 +71,8 @@ class DoubaoWebsocketTTSService(object):
             rospy.get_param('~prefer_legacy_ws', True))
         self.legacy_ws_url = rospy.get_param('~legacy_ws_url',
                                              DEFAULT_LEGACY_WS_URL)
-        self.legacy_appid = rospy.get_param('~legacy_appid',
-                                            DEFAULT_LEGACY_APPID)
+        self.legacy_appid = _normalize_appid(
+            rospy.get_param('~legacy_appid', DEFAULT_LEGACY_APPID))
         self.legacy_token = rospy.get_param(
             '~legacy_token',
             os.environ.get('DOUBAO_TTS_LEGACY_TOKEN',

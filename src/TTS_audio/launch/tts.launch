@@ -10,7 +10,7 @@
   <arg name="play_realtime" default="true"/>
   <arg name="prefer_legacy_ws" default="true"/>
   <arg name="legacy_ws_url" default="wss://openspeech.bytedance.com/api/v1/tts/ws_binary"/>
-  <arg name="legacy_appid" default="5036728199"/>
+  <arg name="legacy_appid" default="s5036728199"/>
   <arg name="legacy_token" default="0gCewCOkjsDGjVEEzdnAQR8uVgUM0suM"/>
   <arg name="legacy_cluster" default="volcano_tts"/>
   <arg name="legacy_voice_type" default="BV001_streaming"/>
