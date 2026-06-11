@@ -17,20 +17,20 @@
 
   <node name="tts_server" pkg="TTS_audio" type="TTS.py"
         output="screen">
-    <param name="ws_url" value="$(arg ws_url)"/>
-    <param name="api_key" value="$(arg api_key)"/>
-    <param name="resource_id" value="$(arg resource_id)"/>
-    <param name="speaker" value="$(arg speaker)"/>
+    <param name="ws_url" value="$(arg ws_url)" type="str"/>
+    <param name="api_key" value="$(arg api_key)" type="str"/>
+    <param name="resource_id" value="$(arg resource_id)" type="str"/>
+    <param name="speaker" value="$(arg speaker)" type="str"/>
     <param name="sample_rate" value="$(arg sample_rate)"/>
-    <param name="audio_format" value="$(arg audio_format)"/>
-    <param name="player" value="$(arg player)"/>
-    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="audio_format" value="$(arg audio_format)" type="str"/>
+    <param name="player" value="$(arg player)" type="str"/>
+    <param name="output_dir" value="$(arg output_dir)" type="str"/>
     <param name="play_realtime" value="$(arg play_realtime)"/>
     <param name="prefer_legacy_ws" value="$(arg prefer_legacy_ws)"/>
-    <param name="legacy_ws_url" value="$(arg legacy_ws_url)"/>
-    <param name="legacy_appid" value="$(arg legacy_appid)"/>
-    <param name="legacy_token" value="$(arg legacy_token)"/>
-    <param name="legacy_cluster" value="$(arg legacy_cluster)"/>
-    <param name="legacy_voice_type" value="$(arg legacy_voice_type)"/>
+    <param name="legacy_ws_url" value="$(arg legacy_ws_url)" type="str"/>
+    <param name="legacy_appid" value="$(arg legacy_appid)" type="str"/>
+    <param name="legacy_token" value="$(arg legacy_token)" type="str"/>
+    <param name="legacy_cluster" value="$(arg legacy_cluster)" type="str"/>
+    <param name="legacy_voice_type" value="$(arg legacy_voice_type)" type="str"/>
   </node>
 </launch>
