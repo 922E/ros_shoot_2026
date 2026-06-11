@@ -63,6 +63,14 @@ END_PRE_SPEED = 0.18       # cmd_vel fallback speed to pre-point
 END_SLIDE_SPEED = 0.18     # final slide speed into 40x40cm end zone
 END_SLIDE_TIMEOUT = 12.0
 
+# Start clearance: a short controlled nudge before the first move_base goal.
+# This moves the robot away from the rear fence before DWA starts planning.
+START_CLEAR_ENABLED = True
+START_CLEAR_VX = 0.12      # body-frame forward speed (m/s)
+START_CLEAR_VY = 0.0       # body-frame lateral speed (m/s)
+START_CLEAR_DURATION = 0.45
+START_CLEAR_SETTLE = 0.15
+
 # Global state flags (same as shoot_2025.py)
 point_msg = None
 target_id_rotating = None
@@ -229,7 +237,9 @@ class CompetitionControl:
                 self.tts_client = rospy.ServiceProxy('tts_service',
                                                      StringService)
             response = self.tts_client(_safe(text))
-            rospy.loginfo("[TTS] %s", _safe(response.data))
+            result = getattr(response, 'result',
+                             getattr(response, 'data', ''))
+            rospy.loginfo("[TTS] %s", _safe(result))
             return True
         except Exception as exc:
             rospy.logwarn("[TTS] unavailable, skip '%s': %s",
@@ -926,6 +936,36 @@ class CompetitionControl:
                 break
             rate.sleep()
 
+    def _start_clearance_nudge(self):
+        enabled = self.global_params.get('start_clear_enabled',
+                                         START_CLEAR_ENABLED)
+        if not enabled:
+            return
+
+        vx = self.global_params.get('start_clear_vx', START_CLEAR_VX)
+        vy = self.global_params.get('start_clear_vy', START_CLEAR_VY)
+        duration = self.global_params.get('start_clear_duration',
+                                          START_CLEAR_DURATION)
+        settle = self.global_params.get('start_clear_settle',
+                                        START_CLEAR_SETTLE)
+        if duration <= 0.0 or (abs(vx) < 1e-4 and abs(vy) < 1e-4):
+            return
+
+        rospy.loginfo("[START_CLEAR] cmd_vel vx=%.3f vy=%.3f duration=%.2fs",
+                      vx, vy, duration)
+        self.cancel()
+        start = rospy.Time.now()
+        rate = rospy.Rate(20)
+        msg = Twist()
+        msg.linear.x = vx
+        msg.linear.y = vy
+        while not rospy.is_shutdown():
+            if (rospy.Time.now() - start).to_sec() >= duration:
+                break
+            self.pub.publish(msg)
+            rate.sleep()
+        self._stop_motion(duration=settle)
+
     def _quat_from_euler(self, roll, pitch, yaw):
         cy = math.cos(yaw * 0.5)
         sy = math.sin(yaw * 0.5)
@@ -1182,6 +1222,8 @@ class CompetitionControl:
         target_id_rotating = None
         target_id_moving = None
         rospy.loginfo("IDs reset, waiting for voice command")
+        self.cancel()
+        self._stop_motion(duration=0.3)
 
         if not self._wait_for_voice_ready():
             self.state = 'FINISH'
@@ -1220,6 +1262,7 @@ class CompetitionControl:
 
         rospy.loginfo("IDs - rotating:%s moving:%s",
                       target_id_rotating, target_id_moving)
+        self._start_clearance_nudge()
         self.state = 'NAV_LOOP'
         self.current_point_index = 0
         rospy.loginfo("NAV_LOOP: %d points", len(self.route_points))

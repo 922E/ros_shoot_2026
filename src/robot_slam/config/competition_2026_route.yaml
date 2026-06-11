@@ -38,7 +38,7 @@ route_points:
     type: "task"
     target_type: "rotating"
     x: 1.160
-    y: -1.706
+    y: -1.686
     yaw: 0.0
 
   # ── 后退2:退回安全 x 走廊 ──
@@ -63,14 +63,14 @@ route_points:
     type: "task"
     target_type: "moving"
     x: 1.160
-    y: -2.980
+    y: -2.970
     yaw: 0.0
 
   # ── 终点 (10分)。costmap 阻挡，先到前置点再低速滑入 ──
   - id: 8
     name: "终点"
     type: "end"
-    x: 0.050
+    x: 0.030
     y: -3.305
     yaw: 0.0
     pre_point:
@@ -85,7 +85,14 @@ global:
   # Predictive rotating gate needs up to half a 26s cycle plus observe/turn.
   shoot_timeout: 22.0
   voice_ready_timeout: 60.0
-  voice_wait_timeout: 18.0
+  voice_wait_timeout: 30.0
+  # Short controlled nudge after voice target confirmation and before the
+  # first move_base goal. Positive vx is robot body-frame forward.
+  start_clear_enabled: true
+  start_clear_vx: 0.12
+  start_clear_vy: 0.0
+  start_clear_duration: 0.45
+  start_clear_settle: 0.15
 
 # 射击瞄准参数集中在 competition_control.py 顶部的
 # "Shooting Manual Tuning" 区域，避免 Python/YAML 两处参数冲突。

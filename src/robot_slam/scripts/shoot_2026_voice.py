@@ -150,23 +150,29 @@ class Shoot2026Voice(object):
         rotating_id = self.find_target_id(text, rotating_map)
         moving_id = self.find_target_id(text, moving_map)
 
-        if rotating_id is not None:
-            self.rotating_id_pub.publish(Int32(data=rotating_id))
-            self.voice_words_pub.publish(String(
-                data='target_id_rotating {}'.format(rotating_id)))
-            rospy.loginfo('publish target_id_rotating: %d', rotating_id)
-            self.call_tts(u'旋转靶 {}'.format(rotating_id))
-
-        if moving_id is not None:
-            self.moving_id_pub.publish(Int32(data=moving_id))
-            self.voice_words_pub.publish(String(
-                data='target_id_moving {}'.format(moving_id)))
-            rospy.loginfo('publish target_id_moving: %d', moving_id)
-            self.call_tts(u'移动靶 {}'.format(moving_id))
-
         if rotating_id is None or moving_id is None:
             rospy.logwarn('voice target IDs incomplete: rotating=%s moving=%s',
                           rotating_id, moving_id)
+            return
+
+        # Keep target confirmation audio synchronous with the main controller:
+        # publish IDs only after TTS returns, so competition_control will not
+        # leave VOICE_RECV while the target announcement is still playing.
+        if rotating_id is not None:
+            self.call_tts(u'旋转靶 {}'.format(rotating_id))
+
+        if moving_id is not None:
+            self.call_tts(u'移动靶 {}'.format(moving_id))
+
+        self.rotating_id_pub.publish(Int32(data=rotating_id))
+        self.voice_words_pub.publish(String(
+            data='target_id_rotating {}'.format(rotating_id)))
+        rospy.loginfo('publish target_id_rotating: %d', rotating_id)
+
+        self.moving_id_pub.publish(Int32(data=moving_id))
+        self.voice_words_pub.publish(String(
+            data='target_id_moving {}'.format(moving_id)))
+        rospy.loginfo('publish target_id_moving: %d', moving_id)
 
     @staticmethod
     def find_target_id(text, target_map):
