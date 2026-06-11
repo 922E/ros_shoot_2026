@@ -203,12 +203,60 @@ class DoubaoWebsocketTTSService(object):
         text = raw.decode('utf-8', 'replace').strip()
         if not text:
             return None
-        data = json.loads(text)
-        done, audio_chunk = self._parse_json_message(data)
-        if audio_chunk:
-            return audio_chunk
+        chunks = []
+        parsed_messages = self._parse_json_stream(text)
+        for data in parsed_messages:
+            done, audio_chunk = self._parse_json_message(data)
+            if audio_chunk:
+                chunks.append(audio_chunk)
+            if done:
+                break
+
+        if chunks:
+            return b''.join(chunks)
         raise RuntimeError('TTS API response without audio: {}'.format(
-            json.dumps(data, ensure_ascii=False)[:800]))
+            text[:800]))
+
+    def _parse_json_stream(self, text):
+        messages = []
+        decoder = json.JSONDecoder()
+        index = 0
+        length = len(text)
+
+        while index < length:
+            while index < length and text[index].isspace():
+                index += 1
+            if index >= length:
+                break
+
+            if text.startswith('data:', index):
+                line_end = text.find('\n', index)
+                if line_end < 0:
+                    line_end = length
+                data_text = text[index + 5:line_end].strip()
+                index = line_end + 1
+                if not data_text or data_text == '[DONE]':
+                    continue
+                messages.append(json.loads(data_text))
+                continue
+
+            try:
+                data, end = decoder.raw_decode(text, index)
+            except ValueError:
+                line_end = text.find('\n', index)
+                if line_end < 0:
+                    line_end = length
+                line = text[index:line_end].strip()
+                index = line_end + 1
+                if line:
+                    messages.append(json.loads(line))
+                continue
+            messages.append(data)
+            index = end
+
+        if not messages:
+            messages.append(json.loads(text))
+        return messages
 
     def _play_audio_file(self, audio_path):
         subprocess.Popen([self.player, '-really-quiet', audio_path]).wait()
