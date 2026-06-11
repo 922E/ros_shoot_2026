@@ -571,7 +571,9 @@ class DoubaoWebsocketTTSService(object):
 
     def _parse_json_message(self, data):
         code = data.get('code')
-        if code not in (None, 0, '0'):
+        message = data.get('message')
+        success_codes = (None, 0, '0', 20000000, '20000000')
+        if code not in success_codes and message != 'OK':
             raise RuntimeError('TTS API error: {}'.format(
                 json.dumps(data, ensure_ascii=False)[:500]))
 
