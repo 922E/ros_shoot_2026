@@ -88,10 +88,11 @@ class DoubaoWebsocketTTSService(object):
         headers = {
             'x-api-key': self.api_key,
             'X-Api-Resource-Id': self.resource_id,
+            'X-Api-Connect-Id': reqid,
             'Connection': 'keep-alive',
             'Content-Type': 'application/json',
         }
-        payload = self._build_payload(text)
+        payload = self._build_payload(text, reqid)
 
         player_proc = None
         if self.play_realtime:
@@ -142,6 +143,7 @@ class DoubaoWebsocketTTSService(object):
     async def _stream_one_url(self, url, headers, payload, output_path,
                               player_proc):
         received_bytes = 0
+        message_count = 0
         with open(output_path, 'wb') as audio_file:
             async with websockets.connect(
                     url, extra_headers=headers,
@@ -158,6 +160,7 @@ class DoubaoWebsocketTTSService(object):
                     except websockets.exceptions.ConnectionClosed:
                         break
 
+                    message_count += 1
                     done, audio_chunk = self._parse_ws_message(message)
                     if audio_chunk:
                         audio_file.write(audio_chunk)
@@ -172,9 +175,13 @@ class DoubaoWebsocketTTSService(object):
                                 player_proc = None
                     if done:
                         break
+        if message_count == 0:
+            raise RuntimeError(
+                'websocket connected but no response frames; check ws_url, '
+                'resource_id and request schema')
         return received_bytes
 
-    def _build_payload(self, text):
+    def _build_payload(self, text, reqid):
         additions = {
             'disable_markdown_filter': True,
             'enable_language_detector': True,
@@ -187,6 +194,9 @@ class DoubaoWebsocketTTSService(object):
             },
         }
         return {
+            'user': {
+                'uid': 'ros_shoot_2026',
+            },
             'req_params': {
                 'text': text,
                 'speaker': self.speaker,
@@ -195,6 +205,12 @@ class DoubaoWebsocketTTSService(object):
                     'format': self.audio_format,
                     'sample_rate': self.sample_rate,
                 },
+            },
+            'request': {
+                'reqid': reqid,
+                'text': text,
+                'text_type': 'plain',
+                'operation': 'submit',
             },
         }
 
