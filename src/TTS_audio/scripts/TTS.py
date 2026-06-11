@@ -365,9 +365,10 @@ class DoubaoWebsocketTTSService(object):
 
         # 0xf is an error frame in Volc's binary protocol.
         if message_type == 0x0f:
-            text = self._decode_protocol_payload(
+            code, text = self._decode_error_payload(
                 payload, serialization, compression)
-            raise RuntimeError('TTS websocket error frame: {}'.format(text))
+            raise RuntimeError(
+                'TTS websocket error frame code={}: {}'.format(code, text))
 
         # 0xc is a frontend/control response. It is not playable audio.
         if message_type == 0x0c:
@@ -379,6 +380,25 @@ class DoubaoWebsocketTTSService(object):
         raise RuntimeError(
             'unsupported websocket binary frame type=0x%x len=%d hex=%s' %
             (message_type, len(data), data[:80].hex()))
+
+    def _decode_error_payload(self, payload, serialization, compression):
+        if len(payload) >= 8:
+            code = int.from_bytes(payload[:4], 'big', signed=False)
+            payload_len = int.from_bytes(payload[4:8], 'big', signed=False)
+            if 0 <= payload_len <= len(payload) - 8:
+                text_payload = payload[8:8 + payload_len]
+            else:
+                text_payload = payload[8:]
+        else:
+            code = None
+            text_payload = payload
+
+        try:
+            text = self._decode_protocol_payload(
+                text_payload, serialization, compression)
+        except Exception:
+            text = text_payload.decode('utf-8', 'replace')
+        return code, text
 
     def _decode_protocol_payload(self, payload, serialization, compression):
         json_start = payload.find(b'{')
