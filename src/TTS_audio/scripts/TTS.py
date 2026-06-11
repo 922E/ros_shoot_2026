@@ -13,7 +13,7 @@ import websockets
 from TTS_audio.srv import StringService, StringServiceResponse
 
 
-DEFAULT_WS_URL = 'wss://openspeech.bytedance.com/api/v3/tts/bidirectional'
+DEFAULT_WS_URL = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
 DEFAULT_API_KEY = '606448be-ddcf-40ed-86fe-2691b56a5c62'
 DEFAULT_RESOURCE_ID = 'volc.service_type.10029'
 DEFAULT_SPEAKER = 'zh_male_beijingxiaoye_emo_v2_mars_bigtts'
@@ -31,6 +31,9 @@ def _as_bool(value):
 class DoubaoWebsocketTTSService(object):
     def __init__(self):
         self.ws_url = rospy.get_param('~ws_url', DEFAULT_WS_URL)
+        self.ws_fallback_urls = rospy.get_param(
+            '~ws_fallback_urls',
+            ['wss://openspeech.bytedance.com/api/v3/tts/bidirectional'])
         self.api_key = rospy.get_param('~api_key',
                                        os.environ.get('DOUBAO_TTS_API_KEY',
                                                       DEFAULT_API_KEY))
@@ -97,36 +100,29 @@ class DoubaoWebsocketTTSService(object):
 
         received_bytes = 0
         try:
-            async with websockets.connect(
-                    self.ws_url, extra_headers=headers,
-                    ping_interval=None, close_timeout=2) as ws:
-                await ws.send(json.dumps(payload, ensure_ascii=False))
-                with open(output_path, 'wb') as audio_file:
-                    while not rospy.is_shutdown():
-                        try:
-                            message = await asyncio.wait_for(
-                                ws.recv(), timeout=self.timeout)
-                        except asyncio.TimeoutError:
-                            raise RuntimeError(
-                                'websocket receive timeout after %.1fs' %
-                                self.timeout)
-                        except websockets.exceptions.ConnectionClosed:
-                            break
-
-                        done, audio_chunk = self._parse_ws_message(message)
-                        if audio_chunk:
-                            audio_file.write(audio_chunk)
-                            received_bytes += len(audio_chunk)
-                            if player_proc is not None and \
-                                    player_proc.stdin is not None:
-                                try:
-                                    player_proc.stdin.write(audio_chunk)
-                                    player_proc.stdin.flush()
-                                except IOError:
-                                    rospy.logwarn('mplayer stdin closed')
-                                    player_proc = None
-                        if done:
-                            break
+            urls = [self.ws_url] + [
+                item for item in self.ws_fallback_urls
+                if item and item != self.ws_url]
+            last_error = None
+            for url in urls:
+                try:
+                    rospy.loginfo('connecting Doubao TTS websocket: %s', url)
+                    chunk_count = await self._stream_one_url(
+                        url, headers, payload, output_path, player_proc)
+                    received_bytes += chunk_count
+                    last_error = None
+                    break
+                except websockets.exceptions.InvalidStatusCode as exc:
+                    last_error = exc
+                    rospy.logwarn('websocket rejected %s: HTTP %s',
+                                  url, exc.status_code)
+                    if exc.status_code != 404:
+                        raise
+                except Exception as exc:
+                    last_error = exc
+                    raise
+            if last_error is not None:
+                raise last_error
         finally:
             if player_proc is not None:
                 if player_proc.stdin is not None:
@@ -139,6 +135,41 @@ class DoubaoWebsocketTTSService(object):
         rospy.loginfo('TTS websocket stream received %d bytes',
                       received_bytes)
         return output_path
+
+    async def _stream_one_url(self, url, headers, payload, output_path,
+                              player_proc):
+        received_bytes = 0
+        with open(output_path, 'wb') as audio_file:
+            async with websockets.connect(
+                    url, extra_headers=headers,
+                    ping_interval=None, close_timeout=2) as ws:
+                await ws.send(json.dumps(payload, ensure_ascii=False))
+                while not rospy.is_shutdown():
+                    try:
+                        message = await asyncio.wait_for(
+                            ws.recv(), timeout=self.timeout)
+                    except asyncio.TimeoutError:
+                        raise RuntimeError(
+                            'websocket receive timeout after %.1fs' %
+                            self.timeout)
+                    except websockets.exceptions.ConnectionClosed:
+                        break
+
+                    done, audio_chunk = self._parse_ws_message(message)
+                    if audio_chunk:
+                        audio_file.write(audio_chunk)
+                        received_bytes += len(audio_chunk)
+                        if player_proc is not None and \
+                                player_proc.stdin is not None:
+                            try:
+                                player_proc.stdin.write(audio_chunk)
+                                player_proc.stdin.flush()
+                            except IOError:
+                                rospy.logwarn('mplayer stdin closed')
+                                player_proc = None
+                    if done:
+                        break
+        return received_bytes
 
     def _build_payload(self, text):
         additions = {

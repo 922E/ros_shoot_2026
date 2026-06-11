@@ -84,9 +84,6 @@ global:
   task_timeout: 60.0
   # Predictive rotating gate needs up to half a 26s cycle plus observe/turn.
   shoot_timeout: 22.0
-  voice_enabled: false
-  debug_rotating_id: 1
-  debug_moving_id: 8
   voice_ready_timeout: 60.0
   voice_wait_timeout: 18.0
 

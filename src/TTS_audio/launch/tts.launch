@@ -1,5 +1,5 @@
 <launch>
-  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/bidirectional"/>
+  <arg name="ws_url" default="wss://openspeech.bytedance.com/api/v3/tts/bidirection"/>
   <arg name="api_key" default="606448be-ddcf-40ed-86fe-2691b56a5c62"/>
   <arg name="resource_id" default="volc.service_type.10029"/>
   <arg name="speaker" default="zh_male_beijingxiaoye_emo_v2_mars_bigtts"/>
