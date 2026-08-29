@@ -91,8 +91,12 @@ SHOOT_FIRE_DURATION_AR = 0.10
 # Circular target (/object_position, x is pixel coordinate)
 CIRCULAR_VISION_TARGET_ID = 52
 CIRCULAR_AIM_CENTER_X = 320.0
-CIRCULAR_FIRE_THRESHOLD_PX = 2.0
-CIRCULAR_AIM_KP = 0.015
+CIRCULAR_FIRE_THRESHOLD_PX = 8.0
+CIRCULAR_NEAR_THRESHOLD_PX = 50.0
+CIRCULAR_AIM_KP_FAR = 0.012
+CIRCULAR_AIM_KP_NEAR = 0.008
+CIRCULAR_MAX_WZ = 0.50
+CIRCULAR_MIN_WZ = 0.06
 
 # Rotating target (/ar_pose_marker, x/y are marker coordinates)
 ROTATING_X_THRESHOLD = 0.10
@@ -244,13 +248,22 @@ class CompetitionControl:
         offset_x = data.x - CIRCULAR_AIM_CENTER_X
         abs_offset_x = abs(offset_x)
         if abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX:
+            kp = CIRCULAR_AIM_KP_NEAR if \
+                abs_offset_x <= CIRCULAR_NEAR_THRESHOLD_PX else \
+                CIRCULAR_AIM_KP_FAR
+            angular_z = -kp * offset_x
+            angular_z = max(-CIRCULAR_MAX_WZ,
+                            min(CIRCULAR_MAX_WZ, angular_z))
+            if abs(angular_z) < CIRCULAR_MIN_WZ:
+                angular_z = CIRCULAR_MIN_WZ if angular_z > 0.0 \
+                    else -CIRCULAR_MIN_WZ
             msg = Twist()
-            msg.angular.z = -CIRCULAR_AIM_KP * offset_x
+            msg.angular.z = angular_z
             self.pub.publish(msg)
             rospy.loginfo_throttle(
                 0.5,
-                "Circular target aiming: id=%.0f x=%.1f offset_x=%.1f wz=%.3f",
-                data.z, data.x, offset_x, msg.angular.z)
+                "Circular target aiming: id=%.0f x=%.1f offset_x=%.1f kp=%.3f wz=%.3f",
+                data.z, data.x, offset_x, kp, msg.angular.z)
             return
 
         self.pub.publish(Twist())
