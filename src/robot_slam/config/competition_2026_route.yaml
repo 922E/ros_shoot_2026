@@ -85,7 +85,7 @@ global:
   # Predictive rotating gate needs up to half a 26s cycle plus observe/turn.
   shoot_timeout: 22.0
   voice_ready_timeout: 60.0
-  voice_wait_timeout: 18.0
+  voice_wait_timeout: 30.0
 
 # 射击瞄准参数集中在 competition_control.py 顶部的
 # "Shooting Manual Tuning" 区域，避免 Python/YAML 两处参数冲突。
