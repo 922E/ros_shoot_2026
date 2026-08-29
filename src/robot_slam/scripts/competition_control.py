@@ -86,66 +86,24 @@ should_attack_moving = False
 SHOOT_SERIAL_PORT = "/dev/shoot"
 SHOOT_SERIAL_BAUDRATE = 9600
 SHOOT_FIRE_DURATION = 0.09
+SHOOT_FIRE_DURATION_AR = 0.10
 
 # Circular target (/object_position, x is pixel coordinate)
 CIRCULAR_VISION_TARGET_ID = 52
 CIRCULAR_AIM_CENTER_X = 320.0
-CIRCULAR_FIRE_THRESHOLD_PX = 5.0
-CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX = 10.0
-CIRCULAR_FALLBACK_SEC = 3.0
-CIRCULAR_STABLE_FRAMES_REQUIRED = 1
-CIRCULAR_KP_FAR = 0.03 #0.05
-CIRCULAR_KP_NEAR = 0.010
-CIRCULAR_NEAR_THRESHOLD_PX = 50.0
-CIRCULAR_MAX_WZ = 0.50
-CIRCULAR_MIN_WZ = 0.10
-CIRCULAR_SEARCH_WZ = 0.18
+CIRCULAR_FIRE_THRESHOLD_PX = 2.0
+CIRCULAR_AIM_KP = 0.015
 
 # Rotating target (/ar_pose_marker, x/y are marker coordinates)
-# "predictive_gate": predict next 3/9 o'clock gate, turn there, then wait.
-# "legacy_track": keep tracking the target ID until it reaches the center.
-ROTATING_AIM_MODE = "legacy_track"
-ROTATING_X_THRESHOLD = 0.06  # old demo Yaw_th
+ROTATING_X_THRESHOLD = 0.10
 ROTATING_Y_MIN = -0.80
 ROTATING_Y_MAX = -0.50
-ROTATING_STABLE_FRAMES_REQUIRED = 2
-ROTATING_KP_FAR = 0.40
-ROTATING_KP_NEAR = 0.40
-ROTATING_NEAR_THRESHOLD = 0.18
-ROTATING_MAX_WZ = 0.35
-ROTATING_MIN_WZ = 0.04
-ROTATING_SHOOT_COOLDOWN = 0.20
-
-# Predictive fixed-gate mode. Positive yaw points left, negative yaw points
-# right in the normal map/base_link convention. Calibrate both offsets onsite.
-ROTATING_PERIOD_SEC = 26.0
-ROTATING_GATE_OBSERVE_SEC = 0.8
-ROTATING_GATE_MAX_OBSERVE_SEC = 2.0
-ROTATING_GATE_MIN_SAMPLES = 4
-ROTATING_GATE_MIN_X_DELTA = 0.04
-ROTATING_GATE_LEFT_YAW_OFFSET_DEG = 6.0
-ROTATING_GATE_RIGHT_YAW_OFFSET_DEG = -6.0
-ROTATING_GATE_YAW_TOL_DEG = 2.0
-ROTATING_GATE_TURN_KP = 1.0
-ROTATING_GATE_MAX_WZ = 0.35
-ROTATING_GATE_MIN_WZ = 0.06
-ROTATING_GATE_FIRE_X_THRESHOLD = 0.04
-ROTATING_GATE_STABLE_FRAMES_REQUIRED = 1
-ROTATING_GATE_MISS_X_THRESHOLD = 0.24
-ROTATING_GATE_MISS_MIN_DX = 0.010
-ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN = 0.35
-ROTATING_GATE_MAX_REPLANS = 2
+ROTATING_AIM_KP = 0.40
+ROTATING_POST_FIRE_DELAY = 2.0
 
 # Moving target (/ar_pose_marker, x is marker coordinate)
-MOVING_X_THRESHOLD = 0.12
-MOVING_STABLE_FRAMES_REQUIRED = 2
-MOVING_KP_FAR = 0.95
-MOVING_KP_NEAR = 0.70
-MOVING_NEAR_THRESHOLD = 0.18
-MOVING_MAX_WZ = 0.60
-MOVING_MIN_WZ = 0.06
-MOVING_SHOOT_COOLDOWN = 0.10
-MOVING_AIM_BIAS_X = 0.00
+MOVING_X_THRESHOLD = 0.07
+MOVING_AIM_KP = 0.75
 
 
 class CompetitionControl:
@@ -163,21 +121,7 @@ class CompetitionControl:
         self.current_point_index = 0
         self.tts_enabled = rospy.get_param('~tts_enabled', True)
         self.tts_client = None
-        self.circular_stable_frames = 0
-        self.circular_aim_start = None
-        self.rotating_stable_frames = 0
-        self.moving_stable_frames = 0
         self.last_shoot_ok = None
-        self.rotating_gate_phase = 'IDLE'
-        self.rotating_gate_samples = []
-        self.rotating_gate_observe_start = None
-        self.rotating_gate_side = None
-        self.rotating_gate_base_yaw_deg = 0.0
-        self.rotating_gate_target_yaw = None
-        self.rotating_gate_wait_start = None
-        self.rotating_gate_last_x = None
-        self.rotating_gate_last_time = None
-        self.rotating_gate_replans = 0
         # Publishers (match shoot_2025.py)
         self.set_pose_pub = rospy.Publisher('/initialpose',
                                             PoseWithCovarianceStamped,
@@ -282,452 +226,134 @@ class CompetitionControl:
         rospy.loginfo("Voice moving target ID received: %d", target_id_moving)
 
     def circular_target(self, data):
-        """环形靶瞄准回调 (same as shoot_2025.py)"""
+        """Aim and fire at the fixed circular target."""
         global point_msg, should_attack_circular
 
         if not should_attack_circular:
-            self.circular_stable_frames = 0
-            self.circular_aim_start = None
             return
         point_msg = data
 
         if data.z != CIRCULAR_VISION_TARGET_ID:
-            self.circular_stable_frames = 0
-            msg = Twist()
-            if data.z == 255:
-                msg.angular.z = CIRCULAR_SEARCH_WZ
-            self.pub.publish(msg)
+            self.pub.publish(Twist())
             rospy.logwarn_throttle(
                 1.0,
-                "Circular target waiting: detected_id=%.0f expected=%d x=%.1f search_wz=%.3f",
-                data.z, CIRCULAR_VISION_TARGET_ID, data.x, msg.angular.z)
+                "Circular target waiting: detected_id=%.0f expected=%d x=%.1f",
+                data.z, CIRCULAR_VISION_TARGET_ID, data.x)
             return
 
         offset_x = data.x - CIRCULAR_AIM_CENTER_X
         abs_offset_x = abs(offset_x)
-        now = rospy.Time.now()
-        if self.circular_aim_start is None:
-            self.circular_aim_start = now
-        aim_elapsed = (now - self.circular_aim_start).to_sec()
-        fallback_ok = aim_elapsed >= CIRCULAR_FALLBACK_SEC and \
-            abs_offset_x <= CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX
-
-        if abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX and not fallback_ok:
-            self.circular_stable_frames = 0
-            kp = CIRCULAR_KP_NEAR if \
-                abs_offset_x <= CIRCULAR_NEAR_THRESHOLD_PX else \
-                CIRCULAR_KP_FAR
-            angular_z = -kp * offset_x
-            angular_z = max(-CIRCULAR_MAX_WZ,
-                            min(CIRCULAR_MAX_WZ, angular_z))
-            if abs(angular_z) < CIRCULAR_MIN_WZ:
-                angular_z = CIRCULAR_MIN_WZ if angular_z > 0 \
-                    else -CIRCULAR_MIN_WZ
+        if abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX:
             msg = Twist()
-            msg.angular.z = angular_z
+            msg.angular.z = -CIRCULAR_AIM_KP * offset_x
             self.pub.publish(msg)
             rospy.loginfo_throttle(
-                1.0,
-                "Circular target aiming: id=%.0f offset_x=%.1f elapsed=%.1fs wz=%.3f",
-                data.z, offset_x, aim_elapsed, angular_z)
+                0.5,
+                "Circular target aiming: id=%.0f x=%.1f offset_x=%.1f wz=%.3f",
+                data.z, data.x, offset_x, msg.angular.z)
+            return
 
+        self.pub.publish(Twist())
+        rospy.loginfo("Circular target FIRE x=%.1f offset_x=%.1f",
+                      data.x, offset_x)
+        fire_ok = self._fire(SHOOT_FIRE_DURATION)
+        self.last_shoot_ok = fire_ok
+        should_attack_circular = False
+        if fire_ok:
+            rospy.loginfo("Circular target pulse sent")
         else:
-            self.circular_stable_frames += 1
-            self.pub.publish(Twist())
-            if fallback_ok and abs_offset_x > CIRCULAR_FIRE_THRESHOLD_PX:
-                rospy.logwarn(
-                    "Circular target fallback stable: elapsed=%.1fs x=%.1f offset_x=%.1f threshold=%.1f",
-                    aim_elapsed, data.x, offset_x,
-                    CIRCULAR_FALLBACK_FIRE_THRESHOLD_PX)
-            else:
-                rospy.loginfo(
-                    "Circular target stable frames: %d/%d x=%.1f offset_x=%.1f",
-                    self.circular_stable_frames,
-                    CIRCULAR_STABLE_FRAMES_REQUIRED,
-                    data.x, offset_x)
-            if not fallback_ok and self.circular_stable_frames < \
-                    CIRCULAR_STABLE_FRAMES_REQUIRED:
-                return
-            rospy.loginfo("Circular target FIRE x=%.1f offset_x=%.1f fallback=%s elapsed=%.1fs",
-                          data.x, offset_x, fallback_ok, aim_elapsed)
-            fire_ok = self._fire()
-            self.last_shoot_ok = fire_ok
-            if fire_ok:
-                rospy.loginfo("Circular target pulse sent")
-            else:
-                rospy.logerr("Circular target pulse failed")
-            self.circular_stable_frames = 0
-            self.circular_aim_start = None
-            should_attack_circular = False
+            rospy.logerr("Circular target pulse failed")
 
     def rotating_target(self, data):
-        """Dispatch rotating target aiming mode."""
-        if ROTATING_AIM_MODE == "predictive_gate":
-            self._rotating_target_predictive_gate(data)
-        else:
-            self._rotating_target_legacy(data)
-
-    def _rotating_target_legacy(self, data):
-        """Original behavior: continuously track target ID until centered."""
+        """Track the selected rotating AR marker and fire in its y window."""
         global target_id_rotating, should_attack_rotating
 
         if not should_attack_rotating:
-            self.rotating_stable_frames = 0
             return
 
-        found_target = False
         for marker in data.markers:
-            if marker.id == target_id_rotating:
-                found_target = True
-                ax = marker.pose.pose.position.x
-                ay = marker.pose.pose.position.y
-                abs_ax = abs(ax)
-                y_ok = ROTATING_Y_MIN <= ay <= ROTATING_Y_MAX
+            if marker.id != target_id_rotating:
+                continue
 
-                if abs_ax >= ROTATING_X_THRESHOLD:
-                    self.rotating_stable_frames = 0
-                    kp = ROTATING_KP_NEAR if \
-                        abs_ax <= ROTATING_NEAR_THRESHOLD else ROTATING_KP_FAR
-                    angular_z = -kp * ax
-                    angular_z = max(-ROTATING_MAX_WZ,
-                                    min(ROTATING_MAX_WZ, angular_z))
-                    if abs(angular_z) < ROTATING_MIN_WZ:
-                        angular_z = ROTATING_MIN_WZ if angular_z > 0 \
-                            else -ROTATING_MIN_WZ
-                    msg = Twist()
-                    msg.angular.z = angular_z
-                    self.pub.publish(msg)
-                    rospy.loginfo_throttle(
-                        1.0,
-                        "Rotating target aiming: id=%d x=%.3f y=%.3f wz=%.3f",
-                        marker.id, ax, ay, angular_z)
+            ax = marker.pose.pose.position.x
+            ay = marker.pose.pose.position.y
+            if abs(ax) >= ROTATING_X_THRESHOLD:
+                msg = Twist()
+                msg.angular.z = -ROTATING_AIM_KP * ax
+                self.pub.publish(msg)
+                rospy.loginfo_throttle(
+                    0.5,
+                    "Rotating target aiming: id=%d x=%.3f y=%.3f wz=%.3f",
+                    marker.id, ax, ay, msg.angular.z)
+                return
 
-                elif y_ok:
-                    self.rotating_stable_frames += 1
-                    self.pub.publish(Twist())
-                    rospy.loginfo("Rotating target stable frames: %d/%d x=%.3f y=%.3f",
-                                  self.rotating_stable_frames,
-                                  ROTATING_STABLE_FRAMES_REQUIRED,
-                                  ax, ay)
-                    if self.rotating_stable_frames < \
-                            ROTATING_STABLE_FRAMES_REQUIRED:
-                        return
-                    rospy.loginfo("Rotating target FIRE x=%.3f y=%.3f",
-                                  ax, ay)
-                    fire_ok = self._fire()
-                    self.last_shoot_ok = fire_ok
-                    rospy.sleep(ROTATING_SHOOT_COOLDOWN)
-                    if fire_ok:
-                        rospy.loginfo("Rotating target pulse sent")
-                    else:
-                        rospy.logerr("Rotating target pulse failed")
-                    self.rotating_stable_frames = 0
-                    should_attack_rotating = False
-
+            if ROTATING_Y_MIN <= ay <= ROTATING_Y_MAX:
+                self.pub.publish(Twist())
+                rospy.loginfo("Rotating target FIRE x=%.3f y=%.3f", ax, ay)
+                fire_ok = self._fire(SHOOT_FIRE_DURATION_AR)
+                self.last_shoot_ok = fire_ok
+                rospy.sleep(ROTATING_POST_FIRE_DELAY)
+                should_attack_rotating = False
+                if fire_ok:
+                    rospy.loginfo("Rotating target pulse sent")
                 else:
-                    self.rotating_stable_frames = 0
-                    self.pub.publish(Twist())
-                    rospy.logwarn_throttle(
-                        1.0,
-                        "Rotating target y outside window: id=%d x=%.3f y=%.3f expected=[%.3f,%.3f]",
-                        marker.id, ax, ay, ROTATING_Y_MIN, ROTATING_Y_MAX)
+                    rospy.logerr("Rotating target pulse failed")
                 return
 
-        if not found_target:
-            self.rotating_stable_frames = 0
             self.pub.publish(Twist())
             rospy.logwarn_throttle(
                 1.0,
-                "Rotating target waiting: expected_id=%s visible_ids=%s",
-                str(target_id_rotating),
-                str([marker.id for marker in data.markers]))
+                "Rotating target y outside window: id=%d x=%.3f y=%.3f expected=[%.3f,%.3f]",
+                marker.id, ax, ay, ROTATING_Y_MIN, ROTATING_Y_MAX)
+            return
 
-    def _prepare_rotating_attack(self, task_yaw_deg):
-        """Reset predictive state before enabling rotating target callback."""
-        self.rotating_stable_frames = 0
-        self.rotating_gate_phase = 'OBSERVE'
-        self.rotating_gate_samples = []
-        self.rotating_gate_observe_start = None
-        self.rotating_gate_side = None
-        self.rotating_gate_base_yaw_deg = task_yaw_deg
-        self.rotating_gate_target_yaw = None
-        self.rotating_gate_wait_start = None
-        self.rotating_gate_last_x = None
-        self.rotating_gate_last_time = None
-        self.rotating_gate_replans = 0
-        rospy.loginfo(
-            "Rotating aim mode=%s base_yaw=%.1fdeg period=%.1fs",
-            ROTATING_AIM_MODE, task_yaw_deg, ROTATING_PERIOD_SEC)
-
-    def _set_rotating_gate(self, side, reason, ax, x_delta):
-        """Select one fixed gate and enter the bounded turn phase."""
-        offset_deg = ROTATING_GATE_RIGHT_YAW_OFFSET_DEG \
-            if side == 'RIGHT' else ROTATING_GATE_LEFT_YAW_OFFSET_DEG
-        target_yaw_deg = self.rotating_gate_base_yaw_deg + offset_deg
-        self.rotating_gate_target_yaw = target_yaw_deg / 180.0 * pi
-        self.rotating_gate_side = side
-        self.rotating_gate_phase = 'TURN_GATE'
-        self.rotating_stable_frames = 0
-        self.rotating_gate_wait_start = None
-        self.rotating_gate_last_x = None
-        self.rotating_gate_last_time = None
-        rospy.loginfo(
-            "[ROTATING_GATE] %s next=%s x=%.3f dx=%.3f "
-            "target_yaw=%.1fdeg max_gate_wait~%.1fs",
-            reason, side, ax, x_delta, target_yaw_deg,
-            ROTATING_PERIOD_SEC / 2.0)
-
-    def _rotating_gate_missed(self, ax, now):
-        """Return True when the selected gate has just been passed."""
-        if self.rotating_gate_wait_start is None:
-            self.rotating_gate_wait_start = now
-
-        if self.rotating_gate_last_x is None:
-            self.rotating_gate_last_x = ax
-            self.rotating_gate_last_time = now
-            return False
-
-        elapsed = (now - self.rotating_gate_wait_start).to_sec()
-        dx = ax - self.rotating_gate_last_x
-        self.rotating_gate_last_x = ax
-        self.rotating_gate_last_time = now
-
-        if elapsed < ROTATING_GATE_MIN_WAIT_BEFORE_REPLAN:
-            return False
-        if abs(ax) < ROTATING_GATE_MISS_X_THRESHOLD:
-            return False
-        if abs(dx) < ROTATING_GATE_MISS_MIN_DX:
-            return False
-
-        return (ax > 0.0 and dx > 0.0) or (ax < 0.0 and dx < 0.0)
-
-    def _fire_rotating_gate(self, reason, ax, ay):
-        """Fire rotating target in predictive-gate mode."""
-        global should_attack_rotating
         self.pub.publish(Twist())
-        rospy.loginfo("[ROTATING_GATE] FIRE %s at %s x=%.3f y=%.3f",
-                      reason, self.rotating_gate_side, ax, ay)
-        fire_ok = self._fire()
-        self.last_shoot_ok = fire_ok
-        rospy.sleep(ROTATING_SHOOT_COOLDOWN)
-        self.rotating_stable_frames = 0
-        should_attack_rotating = False
-        if fire_ok:
-            rospy.loginfo("[ROTATING_GATE] pulse sent at %s",
-                          self.rotating_gate_side)
-        else:
-            rospy.logerr("[ROTATING_GATE] pulse failed at %s",
-                         self.rotating_gate_side)
-
-    def _rotating_target_predictive_gate(self, data):
-        """Predict the next 3/9 o'clock gate, turn to it, then wait."""
-        global target_id_rotating, should_attack_rotating
-
-        if not should_attack_rotating:
-            return
-
-        marker = None
-        for candidate in data.markers:
-            if candidate.id == target_id_rotating:
-                marker = candidate
-                break
-
-        if marker is None:
-            self.rotating_stable_frames = 0
-            if self.rotating_gate_phase == 'TURN_GATE':
-                self._command_rotating_gate_turn()
-                rospy.logwarn_throttle(
-                    1.0,
-                    "[ROTATING_GATE] turning without marker id=%s visible=%s",
-                    str(target_id_rotating),
-                    str([candidate.id for candidate in data.markers]))
-                return
-            self.pub.publish(Twist())
-            rospy.logwarn_throttle(
-                1.0,
-                "[ROTATING_GATE] waiting id=%s phase=%s visible=%s",
-                str(target_id_rotating), self.rotating_gate_phase,
-                str([candidate.id for candidate in data.markers]))
-            return
-
-        ax = marker.pose.pose.position.x
-        ay = marker.pose.pose.position.y
-        now = rospy.Time.now()
-        x_ok = abs(ax) <= ROTATING_GATE_FIRE_X_THRESHOLD
-        y_ok = ROTATING_Y_MIN <= ay <= ROTATING_Y_MAX
-
-        if self.rotating_gate_phase == 'TURN_GATE':
-            if x_ok and y_ok:
-                self._fire_rotating_gate("during_turn", ax, ay)
-                return
-            self._command_rotating_gate_turn()
-            rospy.loginfo_throttle(
-                1.0,
-                "[ROTATING_GATE] turn-check %s id=%d x=%.3f y=%.3f x_ok=%s y_ok=%s",
-                self.rotating_gate_side, marker.id, ax, ay, x_ok, y_ok)
-            return
-
-        if self.rotating_gate_phase in ('IDLE', 'OBSERVE'):
-            self.pub.publish(Twist())
-            if self.rotating_gate_observe_start is None:
-                self.rotating_gate_observe_start = now
-                self.rotating_gate_phase = 'OBSERVE'
-            self.rotating_gate_samples.append((now.to_sec(), ax))
-
-            elapsed = (now - self.rotating_gate_observe_start).to_sec()
-            enough_samples = len(self.rotating_gate_samples) >= \
-                ROTATING_GATE_MIN_SAMPLES
-            if not enough_samples or elapsed < ROTATING_GATE_OBSERVE_SEC:
-                return
-
-            first_x = self.rotating_gate_samples[0][1]
-            x_delta = ax - first_x
-            if abs(x_delta) >= ROTATING_GATE_MIN_X_DELTA:
-                side = 'RIGHT' if x_delta > 0.0 else 'LEFT'
-            elif elapsed >= ROTATING_GATE_MAX_OBSERVE_SEC:
-                # Near a turnaround point: the currently closer side is the
-                # fastest fallback when direction cannot be measured.
-                side = 'LEFT' if ax >= 0.0 else 'RIGHT'
-            else:
-                return
-
-            self._set_rotating_gate(side, "predicted", ax, x_delta)
-            return
-
-        # WAIT_GATE: robot remains fixed. Fire only when the selected target
-        # reaches the crosshair and the original vertical/depth window.
-        self.pub.publish(Twist())
-        if not (x_ok and y_ok):
-            self.rotating_stable_frames = 0
-            if self._rotating_gate_missed(ax, now):
-                if self.rotating_gate_replans < ROTATING_GATE_MAX_REPLANS:
-                    old_side = self.rotating_gate_side
-                    next_side = 'RIGHT' if old_side == 'LEFT' else 'LEFT'
-                    self.rotating_gate_replans += 1
-                    rospy.logwarn(
-                        "[ROTATING_GATE] missed %s window, replan %d/%d to %s",
-                        old_side, self.rotating_gate_replans,
-                        ROTATING_GATE_MAX_REPLANS, next_side)
-                    self._set_rotating_gate(next_side, "replanned", ax, 0.0)
-                    return
-                rospy.logwarn_throttle(
-                    1.0,
-                    "[ROTATING_GATE] missed window, replan limit reached")
-            rospy.loginfo_throttle(
-                1.0,
-                "[ROTATING_GATE] wait %s id=%d x=%.3f y=%.3f x_ok=%s y_ok=%s",
-                self.rotating_gate_side, marker.id, ax, ay, x_ok, y_ok)
-            return
-
-        self.rotating_stable_frames += 1
-        rospy.loginfo("[ROTATING_GATE] stable %d/%d at %s x=%.3f y=%.3f",
-                      self.rotating_stable_frames,
-                      ROTATING_GATE_STABLE_FRAMES_REQUIRED,
-                      self.rotating_gate_side, ax, ay)
-        if self.rotating_stable_frames < \
-                ROTATING_GATE_STABLE_FRAMES_REQUIRED:
-            return
-
-        self._fire_rotating_gate("wait_gate", ax, ay)
-
-    def _command_rotating_gate_turn(self):
-        """Turn toward the selected gate using TF, even if marker is hidden."""
-        if self.rotating_gate_target_yaw is None:
-            self.pub.publish(Twist())
-            return
-
-        yaw_err = self._get_robot_yaw_error(self.rotating_gate_target_yaw)
-        if abs(yaw_err) <= ROTATING_GATE_YAW_TOL_DEG / 180.0 * pi:
-            self.pub.publish(Twist())
-            self.rotating_gate_phase = 'WAIT_GATE'
-            self.rotating_gate_wait_start = rospy.Time.now()
-            self.rotating_gate_last_x = None
-            self.rotating_gate_last_time = None
-            rospy.loginfo("[ROTATING_GATE] aimed at %s, waiting target",
-                          self.rotating_gate_side)
-            return
-
-        angular_z = yaw_err * ROTATING_GATE_TURN_KP
-        angular_z = max(-ROTATING_GATE_MAX_WZ,
-                        min(ROTATING_GATE_MAX_WZ, angular_z))
-        if abs(angular_z) < ROTATING_GATE_MIN_WZ:
-            angular_z = ROTATING_GATE_MIN_WZ if angular_z > 0.0 \
-                else -ROTATING_GATE_MIN_WZ
-        msg = Twist()
-        msg.angular.z = angular_z
-        self.pub.publish(msg)
-        rospy.loginfo_throttle(
+        rospy.logwarn_throttle(
             1.0,
-            "[ROTATING_GATE] turning %s yaw_err=%.1fdeg wz=%.3f",
-            self.rotating_gate_side, yaw_err * 180.0 / pi, angular_z)
+            "Rotating target waiting: expected_id=%s visible_ids=%s",
+            str(target_id_rotating),
+            str([marker.id for marker in data.markers]))
 
     def moving_target(self, data):
-        """移动靶瞄准回调 (same as shoot_2025.py)"""
+        """Track the selected moving AR marker and fire when centered."""
         global target_id_moving, should_attack_moving
 
         if not should_attack_moving:
-            self.moving_stable_frames = 0
             return
 
-        found_target = False
         for marker in data.markers:
-            if marker.id == target_id_moving:
-                found_target = True
-                ax = marker.pose.pose.position.x
-                ay = marker.pose.pose.position.y
-                aim_x = ax - MOVING_AIM_BIAS_X
-                abs_ax = abs(aim_x)
+            if marker.id != target_id_moving:
+                continue
 
-                if abs_ax >= MOVING_X_THRESHOLD:
-                    self.moving_stable_frames = 0
-                    kp = MOVING_KP_NEAR if \
-                        abs_ax <= MOVING_NEAR_THRESHOLD else MOVING_KP_FAR
-                    angular_z = -kp * aim_x
-                    angular_z = max(-MOVING_MAX_WZ,
-                                    min(MOVING_MAX_WZ, angular_z))
-                    if abs(angular_z) < MOVING_MIN_WZ:
-                        angular_z = MOVING_MIN_WZ if angular_z > 0 \
-                            else -MOVING_MIN_WZ
-                    msg = Twist()
-                    msg.angular.z = angular_z
-                    self.pub.publish(msg)
-                    rospy.loginfo_throttle(
-                        1.0,
-                        "Moving target aiming: id=%d x=%.3f aim_x=%.3f y=%.3f bias=%.3f wz=%.3f",
-                        marker.id, ax, aim_x, ay, MOVING_AIM_BIAS_X,
-                        angular_z)
-
-                else:
-                    self.moving_stable_frames += 1
-                    self.pub.publish(Twist())
-                    rospy.loginfo("Moving target stable frames: %d/%d x=%.3f aim_x=%.3f y=%.3f bias=%.3f",
-                                  self.moving_stable_frames,
-                                  MOVING_STABLE_FRAMES_REQUIRED,
-                                  ax, aim_x, ay, MOVING_AIM_BIAS_X)
-                    if self.moving_stable_frames < \
-                            MOVING_STABLE_FRAMES_REQUIRED:
-                        return
-                    rospy.loginfo("Moving target FIRE x=%.3f aim_x=%.3f y=%.3f bias=%.3f",
-                                  ax, aim_x, ay, MOVING_AIM_BIAS_X)
-                    fire_ok = self._fire()
-                    self.last_shoot_ok = fire_ok
-                    rospy.sleep(MOVING_SHOOT_COOLDOWN)
-                    if fire_ok:
-                        rospy.loginfo("Moving target pulse sent")
-                    else:
-                        rospy.logerr("Moving target pulse failed")
-                    self.moving_stable_frames = 0
-                    should_attack_moving = False
+            ax = marker.pose.pose.position.x
+            ay = marker.pose.pose.position.y
+            if abs(ax) >= MOVING_X_THRESHOLD:
+                msg = Twist()
+                msg.angular.z = -MOVING_AIM_KP * ax
+                self.pub.publish(msg)
+                rospy.loginfo_throttle(
+                    0.5,
+                    "Moving target aiming: id=%d x=%.3f y=%.3f wz=%.3f",
+                    marker.id, ax, ay, msg.angular.z)
                 return
 
-        if not found_target:
-            self.moving_stable_frames = 0
             self.pub.publish(Twist())
-            rospy.logwarn_throttle(
-                1.0,
-                "Moving target waiting: expected_id=%s visible_ids=%s",
-                str(target_id_moving),
-                str([marker.id for marker in data.markers]))
+            rospy.loginfo("Moving target FIRE x=%.3f y=%.3f", ax, ay)
+            fire_ok = self._fire(SHOOT_FIRE_DURATION_AR)
+            self.last_shoot_ok = fire_ok
+            should_attack_moving = False
+            if fire_ok:
+                rospy.loginfo("Moving target pulse sent")
+            else:
+                rospy.logerr("Moving target pulse failed")
+            return
+
+        self.pub.publish(Twist())
+        rospy.logwarn_throttle(
+            1.0,
+            "Moving target waiting: expected_id=%s visible_ids=%s",
+            str(target_id_moving),
+            str([marker.id for marker in data.markers]))
 
     # ===================== Navigation =====================
 
@@ -1016,8 +642,8 @@ class CompetitionControl:
 
     # ===================== Shooting =====================
 
-    def _fire(self):
-        """Fire using serial (same as shoot_2025.py)"""
+    def _fire(self, duration=SHOOT_FIRE_DURATION):
+        """Send one fire pulse and verify both serial writes."""
         if self.ser is None:
             rospy.logwarn("Serial not available, cannot fire")
             return False
@@ -1026,7 +652,7 @@ class CompetitionControl:
         try:
             fire_written = self.ser.write(fire_command)
             self.ser.flush()
-            rospy.sleep(SHOOT_FIRE_DURATION)
+            rospy.sleep(duration)
             stop_written = self.ser.write(stop_command)
             self.ser.flush()
         except Exception as exc:
@@ -1067,21 +693,10 @@ class CompetitionControl:
         global should_attack_moving
         if flag_name == 'circular':
             should_attack_circular = False
-            self.circular_stable_frames = 0
-            self.circular_aim_start = None
         elif flag_name == 'rotating':
             should_attack_rotating = False
-            self.rotating_stable_frames = 0
-            self.rotating_gate_phase = 'IDLE'
-            self.rotating_gate_samples = []
-            self.rotating_gate_target_yaw = None
-            self.rotating_gate_wait_start = None
-            self.rotating_gate_last_x = None
-            self.rotating_gate_last_time = None
-            self.rotating_gate_replans = 0
         elif flag_name == 'moving':
             should_attack_moving = False
-            self.moving_stable_frames = 0
         self.pub.publish(Twist())
 
     # ===================== Endpoint slide-in =====================
@@ -1387,14 +1002,12 @@ class CompetitionControl:
                 elif target_type == 'circular':
                     global should_attack_circular
                     self.last_shoot_ok = None
-                    self.circular_aim_start = None
                     should_attack_circular = True
                     shoot_ok = self._wait_for_shoot('circular',
                         self.global_params.get('shoot_timeout', 15.0))
                 elif target_type == 'rotating':
                     global should_attack_rotating
                     self.last_shoot_ok = None
-                    self._prepare_rotating_attack(task_yaw)
                     should_attack_rotating = True
                     shoot_ok = self._wait_for_shoot('rotating',
                         self.global_params.get('shoot_timeout', 22.0))
